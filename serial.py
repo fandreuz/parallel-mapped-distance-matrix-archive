@@ -1,18 +1,5 @@
 import numpy as np
 
-# approximated uniform coordinates of non-uniform points
-# h: uniform spacing
-# L: length of the uniform region
-def rounded_uniform_coordinates(pts, h):
-    return np.floor(np.divide(pts, h)).astype(int)
-
-
-# return a matrix such that each row corresponds to the coords of the bin
-# in which the corresponding point in rounded_uniform_coords should be
-# placed
-def compute_bin_coords(rounded_uniform_coords, bin_dims):
-    return rounded_uniform_coords // bin_dims
-
 
 # top-left and bottom-right
 def bounds(bin_pts):
@@ -52,19 +39,16 @@ def group_by(a):
 # region_dimension is the dimension of the region used to enclose the points.
 # it is preferable that bin_dims * h divides region_dimension exactly in each
 # direction.
-def fill_bins(pts, h, bin_dims, region_dimension):
-    bins_per_axis = np.ceil((region_dimension / h / bin_dims)).astype(int)
+def fill_bins(pts, bins_per_axis, region_dimension):
     nbins = np.prod(bins_per_axis)
+    h = np.divide(region_dimension, bins_per_axis)
 
     indexes_inside_bins = [[] for _ in range(nbins)]
-    # rounded uniform coordinates for each non-uniform point
-    uf_coords = rounded_uniform_coordinates(pts, h)
-    # coordinates of the bin for a given non-uniform point
-    bin_coords = compute_bin_coords(uf_coords, bin_dims)
+    bin_coords = np.floor(np.divide(pts, h)).astype(int)
 
     # moves to the last bin of the axis any point which is outside the region
     # defined by pts2.
-    np.clip(bin_coords, None, bins_per_axis - 1)
+    bin_coords = np.clip(bin_coords, None, bins_per_axis - 1)
 
     # for each non-uniform point, gives the linearized coordinate of the
     # appropriate bin
@@ -85,29 +69,16 @@ def fill_bins(pts, h, bin_dims, region_dimension):
     return bins, indexes_inside_bins
 
 
-# for all the bins, return the top left and bottom right coords of the point
-# representing the enclosing padded rectangle at distance max_distance
 def compute_padded_bin_bounds(boundaries, distance):
-    top_left = boundaries[:, 0] - distance
-    bottom_right = boundaries[:, 1] + distance
-    return np.concatenate([top_left[:, None], bottom_right[:, None]], axis=1)
+    return boundaries - (distance * np.array([1, -1]))[None, :, None]
 
 
-# given a set of bins bounds and a set of points, find which points are inside
-# which bins (a point could belong to multiple bins)
 def match_points_and_bins(bins_bounds, points):
-    # this has one row for each pt in points, and one column for each bin.
-    # True if the point in a given row belongs to the bin in a given column.
-    inclusion_matrix = np.full((len(points), len(bins_bounds)), False)
-    # we now need to check which uniform points are in which padded bin
-    for bin_idx, bin_bounds in enumerate(bins_bounds):
-        inside_bin = np.logical_and(
-            np.all(bin_bounds[0] < points, axis=1),
-            np.all(points < bin_bounds[1], axis=1),
-        )
-        inclusion_matrix[inside_bin, bin_idx] = True
-
-    return inclusion_matrix
+    broadcastable_points = points[:, None]
+    return np.logical_and(
+        np.all(bins_bounds[:, 0] < broadcastable_points, axis=2),
+        np.all(broadcastable_points < bins_bounds[:, 1], axis=2),
+    )
 
 
 def compute_distance(pts1, pts2):
@@ -163,8 +134,7 @@ def mapped_distance_matrix(
     pts2,
     max_distance,
     func,
-    h=None,
-    bin_dims=None,
+    bins_per_axis=None,
     chunks="auto",
     should_vectorize=True,
 ):
@@ -175,21 +145,23 @@ def mapped_distance_matrix(
     if should_vectorize:
         func = np.vectorize(func)
 
-    if not h:
-        # 1000 points in each direction
-        h = region_dimension / 1000
-    if not bin_dims:
-        bin_dims = np.full(region_dimension.shape, 100)
+    if not bins_per_axis:
+        # 3 bins per axis,
+        # i.e. 9 bins in 2D
+        bins_per_axis = np.full(region_dimension.shape, 3)
+    else:
+        bins_per_axis = np.asarray(bins_per_axis)
 
-    if bin_dims.dtype != int:
-        raise ValueError("The number of points in each bin must be an integer")
+    if bins_per_axis.dtype != int:
+        raise ValueError("The number of bins must be an integer number")
 
     ndims = pts1.shape[1]
 
-    bins, indexes_inside_bins = fill_bins(pts1, h, bin_dims, region_dimension)
+    bins, indexes_inside_bins = fill_bins(
+        pts1, bins_per_axis, region_dimension
+    )
     bins, bins_bounds = compute_bins_bounds(bins, ndims)
     padded_bin_bounds = compute_padded_bin_bounds(bins_bounds, max_distance)
-
     assert padded_bin_bounds.shape == bins_bounds.shape
 
     inclusion_matrix = match_points_and_bins(padded_bin_bounds, pts2)
