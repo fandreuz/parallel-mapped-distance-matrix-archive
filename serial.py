@@ -1,34 +1,6 @@
 import numpy as np
 
 
-# top-left and bottom-right
-def bounds(bin_pts):
-    return np.min(bin_pts, axis=0)[None, :], np.max(bin_pts, axis=0)[None, :]
-
-
-# return a tensor of shape N x 2 x D where N is the number of bins, 2 is the
-# number of bounds (top-left and bottom-right) and D is the dimensionality of
-# the space
-def compute_bins_bounds(bins, ndims):
-    nbins = len(bins)
-    numpy_bins = list(map(np.array, bins))
-
-    bin_bounds = np.zeros((nbins, 2, ndims), dtype=float)
-    for bin_idx in range(nbins):
-        b = numpy_bins[bin_idx]
-        # we don't do anything if the bin is empty
-        if len(b) > 0:
-            top_left, bottom_right = bounds(b)
-            bin_bounds[bin_idx, 0] = top_left
-            bin_bounds[bin_idx, 1] = bottom_right
-    return numpy_bins, bin_bounds
-
-
-def group_by(a):
-    a = a[a[:, 0].argsort()]
-    return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
-
-
 # build a list of lists, where each list contains the points in pts contained
 # inside the bin corresponding to a certain (linearized) coordinate. For more on
 # linearized bin coordinates see bin_coords and linearized_bin_coords.
@@ -43,9 +15,7 @@ def fill_bins(pts, bins_per_axis, region_dimension):
     nbins = np.prod(bins_per_axis)
     h = np.divide(region_dimension, bins_per_axis)
 
-    indexes_inside_bins = [[] for _ in range(nbins)]
     bin_coords = np.floor(np.divide(pts, h)).astype(int)
-
     # moves to the last bin of the axis any point which is outside the region
     # defined by pts2.
     bin_coords = np.clip(bin_coords, None, bins_per_axis - 1)
@@ -61,15 +31,31 @@ def fill_bins(pts, bins_per_axis, region_dimension):
         [linearized_bin_coords[:, None], np.arange(len(pts))[:, None]]
     )
     indexes_inside_bins = group_by(linearized_bin_coords)
+    biggest_bin = max(map(len, indexes_inside_bins))
+    nbins = len(indexes_inside_bins)
 
-    bins = []
-    for indexes_in_bin in indexes_inside_bins:
-        bins.append(pts[indexes_in_bin])
+    bins = np.zeros((nbins, biggest_bin, pts.shape[1]))
+    for bin_idx in range(nbins):
+        ps = pts[indexes_inside_bins[bin_idx]]
+        bins[bin_idx, : len(ps)] = ps
 
     return bins, indexes_inside_bins
 
 
-def compute_padded_bin_bounds(boundaries, distance):
+def compute_bounds(bins):
+    bounds = np.max(
+        bins[:, None, :] * np.array([-1, 1])[:, None, None], axis=2
+    )
+    bounds[:, 0] *= -1
+    return bounds
+
+
+def group_by(a):
+    a = a[a[:, 0].argsort()]
+    return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
+
+
+def compute_padded_bounds(boundaries, distance):
     return boundaries - (distance * np.array([1, -1]))[None, :, None]
 
 
@@ -99,7 +85,8 @@ def compute_mapped_distance_matrix(
     matrix = np.zeros((len(pts1), len(pts2)), dtype=float)
 
     for bin_idx in range(inclusion_matrix.shape[1]):
-        bin_pts1 = bins[bin_idx]
+        pts1_idxes = indexes_inside_bins[bin_idx]
+        bin_pts1 = bins[bin_idx, : len(pts1_idxes)]
         if len(bin_pts1) == 0:
             continue
 
@@ -155,13 +142,12 @@ def mapped_distance_matrix(
     if bins_per_axis.dtype != int:
         raise ValueError("The number of bins must be an integer number")
 
-    ndims = pts1.shape[1]
-
     bins, indexes_inside_bins = fill_bins(
         pts1, bins_per_axis, region_dimension
     )
-    bins, bins_bounds = compute_bins_bounds(bins, ndims)
-    padded_bin_bounds = compute_padded_bin_bounds(bins_bounds, max_distance)
+    bins_bounds = compute_bounds(bins)
+    assert bins_bounds.shape == (len(bins), 2, 2)
+    padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
     assert padded_bin_bounds.shape == bins_bounds.shape
 
     inclusion_matrix = match_points_and_bins(padded_bin_bounds, pts2)
