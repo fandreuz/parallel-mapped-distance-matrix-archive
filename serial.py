@@ -24,9 +24,7 @@ def fill_bins(pts, bins_per_axis, region_dimension):
     linearized_bin_coords = np.hstack(
         [linearized_bin_coords[:, None], np.arange(len(pts))[:, None]]
     )
-    indexes_inside_bins = np.array(
-        group_by(linearized_bin_coords), dtype=object
-    )
+    indexes_inside_bins = group_by(linearized_bin_coords)
 
     biggest_bin = max(map(len, indexes_inside_bins))
     nbins = len(indexes_inside_bins)
@@ -71,14 +69,12 @@ def compute_mapped_distance_matrix(
     inclusion_matrix,
     max_distance,
     func,
-    exact_max_distance=True,
+    exact_max_distance,
 ):
     matrix = np.zeros((len(pts1), len(pts2)), dtype=np.float64)
     for bin_idx in range(inclusion_matrix.shape[1]):
         pts1_idxes = indexes_inside_bins[bin_idx]
         bin_pts1 = bins[bin_idx, : len(pts1_idxes)]
-        if len(bin_pts1) == 0:
-            continue
 
         pts2_in_bin = inclusion_matrix[:, bin_idx]
         padded_bin_pts2 = pts2[pts2_in_bin]
@@ -110,6 +106,7 @@ def mapped_distance_matrix(
     bins_per_axis=None,
     chunks="auto",
     should_vectorize=True,
+    exact_max_distance=True,
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
 
@@ -140,14 +137,16 @@ def mapped_distance_matrix(
     # we exclude some bins due to the fact that no points in pts2 belong to them
     non_empty_bins = np.any(inclusion_matrix, axis=0)
 
+    nbins = len(indexes_inside_bins)
     mapped_distance = compute_mapped_distance_matrix(
         bins[non_empty_bins],
-        indexes_inside_bins[non_empty_bins],
+        [indexes_inside_bins[i] for i in range(nbins) if non_empty_bins[i]],
         pts1,
         pts2,
-        inclusion_matrix[:,non_empty_bins],
+        inclusion_matrix[:, non_empty_bins],
         max_distance,
         func,
+        exact_max_distance,
     )
     assert mapped_distance.shape == (len(pts1), len(pts2))
 
