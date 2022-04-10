@@ -4,8 +4,9 @@ from pycsou.linop.sampling import MappedDistanceMatrix
 
 import sys
 import os
+
 sys.path.append(os.getcwd())
-from serial import mapped_distance_matrix
+from parallel import mapped_distance_matrix
 
 from time import time
 
@@ -27,16 +28,18 @@ if __name__ == "__main__":
         samples2=samples2,
         function=func,
         operator_type="dask",
-    )
-    print('pycsou: {} seconds'.format(time() - start))
+    ).mat.compute()
+    print("pycsou: {} seconds".format(time() - start))
 
     start = time()
-    m = mapped_distance_matrix(samples1, samples2, 1, func)
-    print('new: {} seconds'.format(time() - start))
+    m = mapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[5, 5],
+        should_vectorize=False,
+    ).compute()
+    print("new: {} seconds".format(time() - start))
 
-    plt.contourf(x, y, m.dot(alpha).reshape(t.size, t.size), 50)
-    plt.title("Sum of 4 (radial) Gaussians")
-    plt.colorbar()
-    plt.xlabel("$x$")
-    plt.ylabel("$y$")
-    plt.show()
+    assert np.allclose(MDMOp, m)
