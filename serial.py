@@ -1,18 +1,12 @@
 import numpy as np
 
 
-# build a list of lists, where each list contains the points in pts contained
-# inside the bin corresponding to a certain (linearized) coordinate. For more on
-# linearized bin coordinates see bin_coords and linearized_bin_coords.
-# pts is the matrix of points.
-# h is the granularity of the uniform grid we intend to build.
-# bin_dims is the number of uniform points to be included in each (non-padded)
-#   bin, in each direction.
-# region_dimension is the dimension of the region used to enclose the points.
-# it is preferable that bin_dims * h divides region_dimension exactly in each
-# direction.
+def group_by(a):
+    a = a[a[:, 0].argsort()]
+    return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
+
+
 def fill_bins(pts, bins_per_axis, region_dimension):
-    nbins = np.prod(bins_per_axis)
     h = np.divide(region_dimension, bins_per_axis)
 
     bin_coords = np.floor(np.divide(pts, h)).astype(int)
@@ -30,7 +24,10 @@ def fill_bins(pts, bins_per_axis, region_dimension):
     linearized_bin_coords = np.hstack(
         [linearized_bin_coords[:, None], np.arange(len(pts))[:, None]]
     )
-    indexes_inside_bins = group_by(linearized_bin_coords)
+    indexes_inside_bins = np.array(
+        group_by(linearized_bin_coords), dtype=object
+    )
+
     biggest_bin = max(map(len, indexes_inside_bins))
     nbins = len(indexes_inside_bins)
 
@@ -48,11 +45,6 @@ def compute_bounds(bins):
     )
     bounds[:, 0] *= -1
     return bounds
-
-
-def group_by(a):
-    a = a[a[:, 0].argsort()]
-    return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
 def compute_padded_bounds(boundaries, distance):
@@ -81,9 +73,7 @@ def compute_mapped_distance_matrix(
     func,
     exact_max_distance=True,
 ):
-    # we filter away empty bins
-    matrix = np.zeros((len(pts1), len(pts2)), dtype=float)
-
+    matrix = np.zeros((len(pts1), len(pts2)), dtype=np.float64)
     for bin_idx in range(inclusion_matrix.shape[1]):
         pts1_idxes = indexes_inside_bins[bin_idx]
         bin_pts1 = bins[bin_idx, : len(pts1_idxes)]
@@ -92,9 +82,6 @@ def compute_mapped_distance_matrix(
 
         pts2_in_bin = inclusion_matrix[:, bin_idx]
         padded_bin_pts2 = pts2[pts2_in_bin]
-        if len(padded_bin_pts2) == 0:
-            continue
-
         bin_pts2_indexing_to_full = np.arange(len(pts2))[pts2_in_bin]
 
         distances = compute_distance(bin_pts1, padded_bin_pts2)
@@ -102,13 +89,12 @@ def compute_mapped_distance_matrix(
         # indexes is the list of indexes in pts1 that belong to this bin
         indexes = np.asarray(indexes_inside_bins[bin_idx])
 
-        if exact_max_distance:
-            nearby = distances < max_distance
-        else:
-            nearby = np.full(distances.shape, True)
-
         mapped_distance = func(distances)
-        mapped_distance[np.logical_not(nearby)] = 0
+
+        if exact_max_distance:
+            too_far = distances > max_distance
+            mapped_distance[too_far] = 0
+
         matrix[
             indexes[None, :], bin_pts2_indexing_to_full[:, None]
         ] = np.squeeze(mapped_distance).T
@@ -151,12 +137,15 @@ def mapped_distance_matrix(
     assert padded_bin_bounds.shape == bins_bounds.shape
 
     inclusion_matrix = match_points_and_bins(padded_bin_bounds, pts2)
+    # we exclude some bins due to the fact that no points in pts2 belong to them
+    non_empty_bins = np.any(inclusion_matrix, axis=0)
+
     mapped_distance = compute_mapped_distance_matrix(
-        bins,
-        indexes_inside_bins,
+        bins[non_empty_bins],
+        indexes_inside_bins[non_empty_bins],
         pts1,
         pts2,
-        inclusion_matrix,
+        inclusion_matrix[:,non_empty_bins],
         max_distance,
         func,
     )
