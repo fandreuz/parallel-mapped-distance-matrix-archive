@@ -9,24 +9,32 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def fill_bins(pts, bins_per_axis, region_dimension, bins_array_chunks):
+def fill_bins(
+    pts,
+    bins_per_axis,
+    region_dimension,
+    bins_array_chunks,
+    pts_chunks
+):
     h = np.divide(region_dimension, bins_per_axis)
 
-    bin_coords = np.floor(np.divide(pts, h)).astype(int)
+    pts_da = da.from_array(pts, chunks=pts_chunks)
+    bin_coords = da.floor_divide(pts, h).astype(int)
     # moves to the last bin of the axis any point which is outside the region
     # defined by pts2.
-    bin_coords = np.clip(bin_coords, None, bins_per_axis - 1)
+    da.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
     # for each non-uniform point, gives the linearized coordinate of the
     # appropriate bin
     shifted_nbins_per_axis = np.ones_like(bins_per_axis)
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
-    linearized_bin_coords = np.sum(bin_coords * shifted_nbins_per_axis, axis=1)
+    # we re-use the first column of bin_coords
+    linearized_bin_coords = da.dot(bin_coords, shifted_nbins_per_axis[:, None])
+    # we re-use the second column of bin_coords
+    linearized_bin_coords = da.hstack(
+        [linearized_bin_coords, da.arange(len(pts))[:,None]]
+    ).compute()
 
-    # add a second column containing the index in pts1
-    linearized_bin_coords = np.hstack(
-        [linearized_bin_coords[:, None], np.arange(len(pts))[:, None]]
-    )
     indexes_inside_bins = group_by(linearized_bin_coords)
 
     nbins = len(indexes_inside_bins)
@@ -97,7 +105,7 @@ def compute_mapped_distance_on_bin(
         np.zeros((len(pts1_in_bin), len(pts2))),
         chunks=submatrix_mapped_distance_chunks,
     )
-    submatrix[:, bin_pts2_indexing_to_full] = da.squeeze(mapped_distance)
+    submatrix[:, bin_pts2_indexing_to_full] = mapped_distance
     return submatrix
 
 
@@ -110,6 +118,7 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     chunks="auto",
+    pts1_chunks='auto',
     bins_array_chunks="smallest-bin",
     submatrix_chunks="auto",
 ):
@@ -135,6 +144,7 @@ def mapped_distance_matrix(
         bins_per_axis,
         region_dimension,
         bins_array_chunks=bins_array_chunks,
+        pts_chunks=pts1_chunks
     )
     bins_bounds = compute_bounds(bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
