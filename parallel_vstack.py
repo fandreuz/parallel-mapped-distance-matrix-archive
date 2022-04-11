@@ -36,11 +36,11 @@ def fill_bins(pts, bins_per_axis, region_dimension):
     biggest_bin = max(lengths)
     smallest_bin = min(lengths)
 
-    # TODO improve this
     bins = da.from_array(
         np.zeros((nbins, biggest_bin, pts.shape[1])),
         chunks=("auto", -1, -1),
     )
+    # TODO improve this
     for bin_idx in range(nbins):
         ps = pts[indexes_inside_bins[bin_idx]]
         bins[bin_idx, : len(ps)] = ps
