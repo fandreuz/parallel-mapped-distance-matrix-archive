@@ -9,12 +9,10 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def fill_bins(
-    pts, bins_per_axis, region_dimension, bins_array_chunks, pts_chunks
-):
+def fill_bins(pts, bins_per_axis, region_dimension, bins_array_chunks):
     h = np.divide(region_dimension, bins_per_axis)
 
-    pts_da = da.from_array(pts, chunks=pts_chunks)
+    pts_da = da.from_array(pts, chunks=("auto", -1))
     bin_coords = da.floor_divide(pts, h).astype(int)
     # moves to the last bin of the axis any point which is outside the region
     # defined by pts2.
@@ -50,6 +48,7 @@ def fill_bins(
     if bins_array_chunks == "smallest-bin":
         bins_array_chunks = (multiplier, smallest_bin, pts.shape[1])
 
+    # TODO improve this
     bins = da.from_array(
         np.zeros((nbins, biggest_bin, pts.shape[1])),
         chunks=bins_array_chunks,
@@ -65,12 +64,14 @@ def compute_bounds(bins):
     bounds = da.max(
         bins[:, None, :] * np.array([-1, 1])[:, None, None], axis=2
     )
-    bounds[:, 0] *= -1
-    return bounds
+    return da.map_blocks(lambda x: x[..., 0] * -1, bounds, dtype=bounds.dtype)
 
 
 def compute_padded_bounds(boundaries, distance):
-    return boundaries - (distance * np.array([1, -1]))[None, :, None]
+    plus_minus = distance * np.array([1, -1])[None, :, None]
+    return da.map_blocks(
+        lambda bs: bs - plus_minus, boundaries, dtype=boundaries.dtype
+    )
 
 
 def match_points_and_bins(bins_bounds, points):
@@ -123,7 +124,6 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     chunks="auto",
-    pts1_chunks="auto",
     bins_array_chunks="smallest-bin",
     submatrix_chunks="auto",
 ):
@@ -149,7 +149,6 @@ def mapped_distance_matrix(
         bins_per_axis,
         region_dimension,
         bins_array_chunks=bins_array_chunks,
-        pts_chunks=pts1_chunks,
     )
     bins_bounds = compute_bounds(bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
