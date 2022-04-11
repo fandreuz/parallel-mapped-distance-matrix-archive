@@ -2,10 +2,14 @@ from serial import group_by
 
 import numpy as np
 import dask.array as da
-import dask
 
 
-def fill_bins(pts, bins_per_axis, region_dimension):
+def group_by(a):
+    a = a[a[:, 0].argsort()]
+    return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
+
+
+def fill_bins(pts, bins_per_axis, region_dimension, bins_array_chunks):
     h = np.divide(region_dimension, bins_per_axis)
 
     bin_coords = np.floor(np.divide(pts, h)).astype(int)
@@ -30,10 +34,12 @@ def fill_bins(pts, bins_per_axis, region_dimension):
     biggest_bin = max(lengths)
     smallest_bin = min(lengths)
 
-    chunks = (1, smallest_bin, pts.shape[1])
+    if bins_array_chunks == "smallest-bin":
+        bins_array_chunks = (1, smallest_bin, pts.shape[1])
+
     bins = da.from_array(
         np.zeros((nbins, biggest_bin, pts.shape[1])),
-        chunks=chunks,
+        chunks=bins_array_chunks,
     )
     for bin_idx in range(nbins):
         ps = pts[indexes_inside_bins[bin_idx]]
@@ -62,12 +68,18 @@ def match_points_and_bins(bins_bounds, points):
     )
 
 
-def compute_distance(pts1, pts2, samples_chunks="auto"):
+def compute_distance(pts1, pts2):
     return da.linalg.norm(pts1[:, None, :] - pts2[None, ...], axis=-1)
 
 
 def compute_mapped_distance_on_bin(
-    pts1_in_bin, pts2, inclusion_vector, max_distance, func, exact_max_distance
+    pts1_in_bin,
+    pts2,
+    inclusion_vector,
+    max_distance,
+    func,
+    exact_max_distance,
+    submatrix_mapped_distance_chunks,
 ):
     padded_bin_pts2 = pts2[inclusion_vector]
     bin_pts2_indexing_to_full = np.arange(len(pts2))[inclusion_vector]
@@ -81,7 +93,10 @@ def compute_mapped_distance_on_bin(
         mapped_distance = mapped_distance.compute()
         mapped_distance[too_far] = 0
 
-    submatrix = da.from_array(np.zeros((len(pts1_in_bin), len(pts2))))
+    submatrix = da.from_array(
+        np.zeros((len(pts1_in_bin), len(pts2))),
+        chunks=submatrix_mapped_distance_chunks,
+    )
     submatrix[:, bin_pts2_indexing_to_full] = da.squeeze(mapped_distance)
     return submatrix
 
@@ -92,9 +107,11 @@ def mapped_distance_matrix(
     max_distance,
     func,
     bins_per_axis=None,
-    chunks="auto",
     should_vectorize=True,
     exact_max_distance=True,
+    chunks="auto",
+    bins_array_chunks="smallest-bin",
+    submatrix_chunks="auto",
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
 
@@ -114,12 +131,13 @@ def mapped_distance_matrix(
         raise ValueError("The number of bins must be an integer number")
 
     bins, indexes_inside_bins = fill_bins(
-        pts1, bins_per_axis, region_dimension
+        pts1,
+        bins_per_axis,
+        region_dimension,
+        bins_array_chunks=bins_array_chunks,
     )
     bins_bounds = compute_bounds(bins)
-    assert bins_bounds.shape == (len(bins), 2, 2)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
-    assert padded_bin_bounds.shape == bins_bounds.shape
 
     inclusion_matrix = match_points_and_bins(padded_bin_bounds, pts2)
 
@@ -145,24 +163,24 @@ def mapped_distance_matrix(
         dtype=int,
     )
 
-    stacked_mapped_distance = da.vstack(
+    mapped_distance = da.from_array(
+        np.zeros((len(pts1), len(pts2))), chunks=chunks
+    )
+    mapped_distance[non_empty_bins_mapping] = da.vstack(
         [
             compute_mapped_distance_on_bin(
                 bin[:n_in_bin],
                 pts2,
                 inclusion_vector,
-                max_distance,
-                func,
-                exact_max_distance,
+                max_distance=max_distance,
+                func=func,
+                exact_max_distance=exact_max_distance,
+                submatrix_mapped_distance_chunks=submatrix_chunks,
             )
             for bin, n_in_bin, inclusion_vector in zip(
                 bins, map(len, indexes_inside_bins), inclusion_matrix
             )
         ]
     )
-    mapped_distance = da.from_array(np.zeros((len(pts1), len(pts2))))
-    mapped_distance[non_empty_bins_mapping] = stacked_mapped_distance
-
-    assert mapped_distance.shape == (len(pts1), len(pts2))
 
     return mapped_distance
