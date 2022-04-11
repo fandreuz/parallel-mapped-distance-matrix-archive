@@ -98,9 +98,7 @@ def compute_mapped_distance_matrix(
             mapped_distance[too_far] = 0
 
         submatrix_pts1 = matrix[indexes]
-        submatrix_pts1[:, bin_pts2_indexing_to_full] = da.squeeze(
-            mapped_distance
-        )
+        submatrix_pts1[:, bin_pts2_indexing_to_full] = mapped_distance
         matrix[indexes] = submatrix_pts1
     return matrix
 
