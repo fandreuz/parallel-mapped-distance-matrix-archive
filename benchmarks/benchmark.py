@@ -321,14 +321,6 @@ def vbins_md04_bpa1010_emdf_baca(samples1, samples2, func=f):
 
 benchmarks = [
     pycsou,
-    bins_md1_bpa55,
-    bins_md04_bpa55,
-    bins_md1_bpa1010,
-    bins_md04_bpa1010,
-    bins_md1_bpa55_emdf,
-    bins_md04_bpa55_emdf,
-    bins_md1_bpa1010_emdf,
-    bins_md04_bpa1010_emdf,
     vbins_md1_bpa55,
     vbins_md04_bpa55,
     vbins_md1_bpa1010,
