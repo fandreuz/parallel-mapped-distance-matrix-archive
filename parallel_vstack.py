@@ -10,11 +10,7 @@ def group_by(a):
 
 
 def fill_bins(
-    pts,
-    bins_per_axis,
-    region_dimension,
-    bins_array_chunks,
-    pts_chunks
+    pts, bins_per_axis, region_dimension, bins_array_chunks, pts_chunks
 ):
     h = np.divide(region_dimension, bins_per_axis)
 
@@ -32,7 +28,7 @@ def fill_bins(
     linearized_bin_coords = da.dot(bin_coords, shifted_nbins_per_axis[:, None])
     # we re-use the second column of bin_coords
     linearized_bin_coords = da.hstack(
-        [linearized_bin_coords, da.arange(len(pts))[:,None]]
+        [linearized_bin_coords, da.arange(len(pts))[:, None]]
     ).compute()
 
     indexes_inside_bins = group_by(linearized_bin_coords)
@@ -42,8 +38,17 @@ def fill_bins(
     biggest_bin = max(lengths)
     smallest_bin = min(lengths)
 
+    multiplier = 1
+    if isinstance(bins_array_chunks, tuple):
+        if len(bins_array_chunks) > 2:
+            raise ValueError(
+                "Unexpected number of arguments for bins_array_chunks"
+            )
+        multiplier = int(bins_array_chunks[0])
+        bins_array_chunks = bins_array_chunks[1]
+
     if bins_array_chunks == "smallest-bin":
-        bins_array_chunks = (1, smallest_bin, pts.shape[1])
+        bins_array_chunks = (multiplier, smallest_bin, pts.shape[1])
 
     bins = da.from_array(
         np.zeros((nbins, biggest_bin, pts.shape[1])),
@@ -118,7 +123,7 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     chunks="auto",
-    pts1_chunks='auto',
+    pts1_chunks="auto",
     bins_array_chunks="smallest-bin",
     submatrix_chunks="auto",
 ):
@@ -144,7 +149,7 @@ def mapped_distance_matrix(
         bins_per_axis,
         region_dimension,
         bins_array_chunks=bins_array_chunks,
-        pts_chunks=pts1_chunks
+        pts_chunks=pts1_chunks,
     )
     bins_bounds = compute_bounds(bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
