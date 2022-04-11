@@ -64,7 +64,7 @@ def compute_bounds(bins):
     bounds = da.max(
         bins[:, None, :] * np.array([-1, 1])[:, None, None], axis=2
     )
-    return da.map_blocks(lambda x: x[..., 0] * -1, bounds, dtype=bounds.dtype)
+    return da.map_blocks(lambda x: x[:, 0] * -1, bounds, dtype=bounds.dtype)
 
 
 def compute_padded_bounds(boundaries, distance):
@@ -99,7 +99,9 @@ def compute_mapped_distance_on_bin(
     bin_pts2_indexing_to_full = np.arange(len(pts2))[inclusion_vector]
 
     distances_da = compute_distance(pts1_in_bin, padded_bin_pts2)
-    mapped_distance = da.map_blocks(func, distances_da, dtype=np.float64)
+    mapped_distance = da.map_blocks(
+        func, distances_da, dtype=distances_da.dtype
+    )
 
     if exact_max_distance:
         distances = distances_da.compute()
