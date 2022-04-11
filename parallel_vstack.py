@@ -9,7 +9,7 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def fill_bins(pts, bins_per_axis, region_dimension, bins_array_chunks):
+def fill_bins(pts, bins_per_axis, region_dimension):
     h = np.divide(region_dimension, bins_per_axis)
 
     pts_da = da.from_array(pts, chunks=("auto", -1))
@@ -36,22 +36,10 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_array_chunks):
     biggest_bin = max(lengths)
     smallest_bin = min(lengths)
 
-    multiplier = 1
-    if isinstance(bins_array_chunks, tuple):
-        if len(bins_array_chunks) > 2:
-            raise ValueError(
-                "Unexpected number of arguments for bins_array_chunks"
-            )
-        multiplier = int(bins_array_chunks[0])
-        bins_array_chunks = bins_array_chunks[1]
-
-    if bins_array_chunks == "smallest-bin":
-        bins_array_chunks = (multiplier, smallest_bin, pts.shape[1])
-
     # TODO improve this
     bins = da.from_array(
         np.zeros((nbins, biggest_bin, pts.shape[1])),
-        chunks=bins_array_chunks,
+        chunks=("auto", -1, -1),
     )
     for bin_idx in range(nbins):
         ps = pts[indexes_inside_bins[bin_idx]]
@@ -61,17 +49,33 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_array_chunks):
 
 
 def compute_bounds(bins):
-    bounds = da.max(
-        bins[:, None, :] * np.array([-1, 1])[:, None, None], axis=2
+    plus_minus = np.array([1, -1])[:, None, None]
+    nbins_per_chunk = max(bins.chunks[0])
+    _, npts_per_bin, ndims = bins.shape
+
+    # we add a negative axis
+    temp = da.map_blocks(
+        lambda bns: bns[:, None, :] * plus_minus,
+        bins,
+        dtype=bins.dtype,
+        chunks=(nbins_per_chunk, npts_per_bin, 2, ndims),
+        new_axis=(2,),
     )
-    return da.map_blocks(lambda x: x[:, 0] * -1, bounds, dtype=bounds.dtype)
+
+    # find maximum of positive and negative axes
+    bounds = da.max(temp, axis=1)
+
+    # we restore the original sign of the negative axis
+    return da.map_blocks(
+        lambda x: x[:, 0] * -1, bounds, dtype=bounds.dtype
+    )
 
 
 def compute_padded_bounds(boundaries, distance):
-    plus_minus = distance * np.array([1, -1])[None, :, None]
+    plus_minus = distance * np.array([1, -1])[:, None]
     return da.map_blocks(
-        lambda bs: bs - plus_minus, boundaries, dtype=boundaries.dtype
-    )
+        lambda bs: bs[:,None] - plus_minus, boundaries, dtype=boundaries.dtype
+    ).compute()
 
 
 def match_points_and_bins(bins_bounds, points):
@@ -126,7 +130,6 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     chunks="auto",
-    bins_array_chunks="smallest-bin",
     submatrix_chunks="auto",
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
@@ -150,7 +153,6 @@ def mapped_distance_matrix(
         pts1,
         bins_per_axis,
         region_dimension,
-        bins_array_chunks=bins_array_chunks,
     )
     bins_bounds = compute_bounds(bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
