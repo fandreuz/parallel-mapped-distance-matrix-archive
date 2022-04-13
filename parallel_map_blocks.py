@@ -134,8 +134,6 @@ def mapped_distance_matrix(
     bins_per_axis=None,
     should_vectorize=True,
     exact_max_distance=True,
-    chunks="auto",
-    submatrix_chunks="auto",
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
 
