@@ -8,6 +8,7 @@ import sys, os
 sys.path.append(os.getcwd())
 from parallel_vstack import mapped_distance_matrix as vmapped_distance_matrix
 from parallel import mapped_distance_matrix
+from parallel_map_blocks import mapped_distance_matrix as mbmapped_distance_matrix
 
 
 sigma = 1 / 12
@@ -318,25 +319,110 @@ def vbins_md04_bpa1010_emdf_baca(samples1, samples2, func=f):
         bins_array_chunks="auto",
     ).compute()
 
+# -------------------
+
+def mbbins_md1_bpa55(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[5, 5],
+        should_vectorize=False,
+    ).compute()
+
+
+def mbbins_md04_bpa55(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        0.4,
+        func,
+        bins_per_axis=[5, 5],
+        should_vectorize=False,
+    ).compute()
+
+
+def mbbins_md1_bpa1010(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[10, 10],
+        should_vectorize=False,
+    ).compute()
+
+
+def mbbins_md04_bpa1010(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[10, 10],
+        should_vectorize=False,
+    ).compute()
+
+
+def mbbins_md1_bpa55_emdf(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[5, 5],
+        should_vectorize=False,
+        exact_max_distance=False,
+    ).compute()
+
+
+def mbbins_md04_bpa55_emdf(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        0.4,
+        func,
+        bins_per_axis=[5, 5],
+        should_vectorize=False,
+        exact_max_distance=False,
+    ).compute()
+
+
+def mbbins_md1_bpa1010_emdf(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[10, 10],
+        should_vectorize=False,
+        exact_max_distance=False,
+    ).compute()
+
+
+def mbbins_md04_bpa1010_emdf(samples1, samples2, func=f):
+    mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[10, 10],
+        should_vectorize=False,
+        exact_max_distance=False,
+    ).compute()
+
 
 benchmarks = [
     pycsou,
-    vbins_md1_bpa55,
-    vbins_md04_bpa55,
-    vbins_md1_bpa1010,
-    vbins_md04_bpa1010,
-    vbins_md1_bpa55_emdf,
-    vbins_md04_bpa55_emdf,
-    vbins_md1_bpa1010_emdf,
-    vbins_md04_bpa1010_emdf,
-    vbins_md1_bpa55_baca,
-    vbins_md04_bpa55_baca,
-    vbins_md1_bpa1010_baca,
-    vbins_md04_bpa1010_baca,
-    vbins_md1_bpa55_emdf_baca,
-    vbins_md04_bpa55_emdf_baca,
-    vbins_md1_bpa1010_emdf_baca,
-    vbins_md04_bpa1010_emdf_baca,
+    mbbins_md1_bpa55,
+    mbbins_md04_bpa55,
+    mbbins_md1_bpa1010,
+    mbbins_md04_bpa1010,
+    mbbins_md1_bpa55_emdf,
+    mbbins_md04_bpa55_emdf,
+    mbbins_md1_bpa1010_emdf,
+    mbbins_md04_bpa1010_emdf,
 ]
 
 
