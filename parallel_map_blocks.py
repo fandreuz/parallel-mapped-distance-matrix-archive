@@ -53,30 +53,42 @@ def fill_bins(pts, bins_per_axis, region_dimension):
 
 
 def compute_bounds(bins):
-    plus_minus = np.array([1, -1])[:, None, None]
+    plus_minus = np.array([-1, 1])[:, None]
     nbins_per_chunk = max(bins.chunks[0])
     _, npts_per_bin, ndims = bins.shape
 
     # we add a negative axis
     temp = da.map_blocks(
-        lambda bns: bns[:, None, :] * plus_minus,
+        lambda bns: bns[:, :, None] * plus_minus,
         bins,
         dtype=bins.dtype,
         chunks=(nbins_per_chunk, npts_per_bin, 2, ndims),
         new_axis=(2,),
+        meta=np.array((), dtype=bins.dtype),
     )
 
     # find maximum of positive and negative axes
     bounds = da.max(temp, axis=1)
 
+    def switch_sign(x):
+        x[:, 0] *= -1
+        return x
+
     # we restore the original sign of the negative axis
-    return da.map_blocks(lambda x: x[:, 0] * -1, bounds, dtype=bounds.dtype)
+    return da.map_blocks(
+        switch_sign,
+        bounds,
+        dtype=bounds.dtype,
+        meta=np.array((), dtype=bins.dtype),
+    )
 
 
 def compute_padded_bounds(boundaries, distance):
-    plus_minus = distance * np.array([1, -1])[:, None]
+    plus_minus = distance * np.array([-1, 1])[:, None]
     return da.map_blocks(
-        lambda bs: bs[:, None] - plus_minus, boundaries, dtype=boundaries.dtype
+        lambda bs: bs + plus_minus,
+        boundaries,
+        meta=np.array((), dtype=boundaries.dtype),
     )
 
 
