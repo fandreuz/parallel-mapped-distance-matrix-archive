@@ -13,7 +13,7 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def fill_bins(pts, bins_per_axis, region_dimension):
+def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     h = np.divide(region_dimension, bins_per_axis)
 
     pts_da = da.from_array(pts, chunks=("auto", -1))
@@ -28,7 +28,6 @@ def fill_bins(pts, bins_per_axis, region_dimension):
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
     # we re-use the first column of bin_coords
     linearized_bin_coords = da.dot(bin_coords, shifted_nbins_per_axis[:, None])
-    # we re-use the second column of bin_coords
     linearized_bin_coords = da.hstack(
         [linearized_bin_coords, da.arange(len(pts))[:, None]]
     ).compute()
@@ -42,7 +41,7 @@ def fill_bins(pts, bins_per_axis, region_dimension):
 
     bins = da.from_array(
         np.zeros((nbins, biggest_bin, pts.shape[1])),
-        chunks=("auto", -1, -1),
+        chunks=(bins_per_chunk, -1, -1),
     )
     # TODO improve this
     for bin_idx in range(nbins):
@@ -109,6 +108,10 @@ def compute_mapped_distance_on_chunk(
     func,
     exact_max_distance,
 ):
+    # re-establish the proper dimensions for these matrices
+    n_pts1_inside_chunk = n_pts1_inside_chunk[:,0,0]
+    inclusion_submatrix = inclusion_submatrix[...,0]
+
     # TODO shall this be a dask array?
     submatrix = np.zeros((np.sum(n_pts1_inside_chunk), len(pts2)))
 
@@ -116,7 +119,7 @@ def compute_mapped_distance_on_chunk(
     for bin_idx in range(len(pts1_in_chunk)):
         pts1_in_bin = pts1_in_chunk[bin_idx, : n_pts1_inside_chunk[bin_idx]]
 
-        inclusion_vector = inclusion_submatrix[:, bin_idx]
+        inclusion_vector = inclusion_submatrix[bin_idx]
         padded_bin_pts2 = pts2[inclusion_vector]
 
         distances_da = da.linalg.norm(
@@ -146,6 +149,7 @@ def mapped_distance_matrix(
     bins_per_axis=None,
     should_vectorize=True,
     exact_max_distance=True,
+    bins_per_thread="auto",
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
 
@@ -165,14 +169,12 @@ def mapped_distance_matrix(
         raise ValueError("The number of bins must be an integer number")
 
     bins, indexes_inside_bins = fill_bins(
-        pts1,
-        bins_per_axis,
-        region_dimension,
+        pts1, bins_per_axis, region_dimension, bins_per_chunk=bins_per_thread
     )
     bins_bounds = compute_bounds(bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
 
-    inclusion_matrix_da = match_points_and_bins(padded_bin_bounds, pts2)
+    inclusion_matrix_da = match_points_and_bins(padded_bin_bounds, pts2).T
 
     # we exclude some bins due to the fact that no points in pts2 belong to them
 
@@ -180,10 +182,10 @@ def mapped_distance_matrix(
     # non_empty_bins = da.any(inclusion_matrix, axis=0)
 
     inclusion_matrix = inclusion_matrix_da.compute()
-    non_empty_bins = np.any(inclusion_matrix, axis=0)
+    non_empty_bins = np.any(inclusion_matrix, axis=1)
 
     bins = bins[non_empty_bins]
-    inclusion_matrix = inclusion_matrix[:, non_empty_bins].T
+    inclusion_matrix = inclusion_matrix[non_empty_bins]
 
     nbins = len(indexes_inside_bins)
     # this is used to move in the proper position of the final matrix
@@ -224,11 +226,14 @@ def mapped_distance_matrix(
     )
 
     n_pts1_inside_bins_da = da.from_array(
-        n_pts1_inside_bins, chunks=(bins.chunks[0],)
+        n_pts1_inside_bins[:, None, None], chunks=(bins.chunks[0], 1, 1)
+    )
+    inclusion_matrix_da = inclusion_matrix_da[..., None].rechunk(
+        (inclusion_matrix_da.chunks[0], inclusion_matrix_da.chunks[1], (1,))
     )
 
-    mapped_distance_chunks = (*new_chunks_pts1, len(pts2))
-    mapped_distance = da.from_array(np.zeros((len(pts1), len(pts2))))
+    mapped_distance_chunks = (new_chunks_pts1, (len(pts2),))
+    mapped_distance = np.zeros((len(pts1), len(pts2)))
     mapped_distance[non_empty_bins_mapping] = da.map_blocks(
         pcompute_mapped_distance_on_chunk,
         bins,
@@ -237,15 +242,12 @@ def mapped_distance_matrix(
         # bins are aggregated (i.e. we lose the first dimension of bins)
         # and the spatial dimension is lost due to the fact that distance
         # is a scalar
-        drop_axis=(
-            0,
-            2,
-        ),
+        drop_axis=(1, 2),
         # the second dimension is the number of points in pts2
         new_axis=(1,),
         chunks=mapped_distance_chunks,
         dtype=pts1.dtype,
         meta=np.array((), dtype=pts1.dtype),
-    )
+    ).compute()
 
     return mapped_distance
