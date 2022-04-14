@@ -19,7 +19,7 @@ def f(x):
 
 
 def pycsou(samples1, samples2, func=f):
-    MappedDistanceMatrix(
+    return MappedDistanceMatrix(
         samples1=samples1,
         samples2=samples2,
         function=func,
@@ -31,7 +31,7 @@ def pycsou(samples1, samples2, func=f):
 
 
 def bins_md1_bpa55(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -42,7 +42,7 @@ def bins_md1_bpa55(samples1, samples2, func=f):
 
 
 def bins_md04_bpa55(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -53,7 +53,7 @@ def bins_md04_bpa55(samples1, samples2, func=f):
 
 
 def bins_md1_bpa1010(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -64,7 +64,7 @@ def bins_md1_bpa1010(samples1, samples2, func=f):
 
 
 def bins_md04_bpa1010(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -75,7 +75,7 @@ def bins_md04_bpa1010(samples1, samples2, func=f):
 
 
 def bins_md1_bpa55_emdf(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -87,7 +87,7 @@ def bins_md1_bpa55_emdf(samples1, samples2, func=f):
 
 
 def bins_md04_bpa55_emdf(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -99,7 +99,7 @@ def bins_md04_bpa55_emdf(samples1, samples2, func=f):
 
 
 def bins_md1_bpa1010_emdf(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -111,7 +111,7 @@ def bins_md1_bpa1010_emdf(samples1, samples2, func=f):
 
 
 def bins_md04_bpa1010_emdf(samples1, samples2, func=f):
-    mapped_distance_matrix(
+    return mapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -137,7 +137,7 @@ def vbins_md1_bpa55(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa55(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -148,7 +148,7 @@ def vbins_md04_bpa55(samples1, samples2, func=f):
 
 
 def vbins_md1_bpa1010(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -159,7 +159,7 @@ def vbins_md1_bpa1010(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa1010(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -170,7 +170,7 @@ def vbins_md04_bpa1010(samples1, samples2, func=f):
 
 
 def vbins_md1_bpa55_emdf(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -182,7 +182,7 @@ def vbins_md1_bpa55_emdf(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa55_emdf(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -194,7 +194,7 @@ def vbins_md04_bpa55_emdf(samples1, samples2, func=f):
 
 
 def vbins_md1_bpa1010_emdf(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -206,7 +206,7 @@ def vbins_md1_bpa1010_emdf(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa1010_emdf(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -221,7 +221,7 @@ def vbins_md04_bpa1010_emdf(samples1, samples2, func=f):
 
 
 def vbins_md1_bpa55_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -233,7 +233,7 @@ def vbins_md1_bpa55_baca(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa55_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -245,7 +245,7 @@ def vbins_md04_bpa55_baca(samples1, samples2, func=f):
 
 
 def vbins_md1_bpa1010_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -257,7 +257,7 @@ def vbins_md1_bpa1010_baca(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa1010_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -269,7 +269,7 @@ def vbins_md04_bpa1010_baca(samples1, samples2, func=f):
 
 
 def vbins_md1_bpa55_emdf_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -282,7 +282,7 @@ def vbins_md1_bpa55_emdf_baca(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa55_emdf_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -295,7 +295,7 @@ def vbins_md04_bpa55_emdf_baca(samples1, samples2, func=f):
 
 
 def vbins_md1_bpa1010_emdf_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -308,7 +308,7 @@ def vbins_md1_bpa1010_emdf_baca(samples1, samples2, func=f):
 
 
 def vbins_md04_bpa1010_emdf_baca(samples1, samples2, func=f):
-    vmapped_distance_matrix(
+    return vmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -322,7 +322,7 @@ def vbins_md04_bpa1010_emdf_baca(samples1, samples2, func=f):
 # -------------------
 
 def mbbins_md1_bpa55(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -333,7 +333,7 @@ def mbbins_md1_bpa55(samples1, samples2, func=f):
 
 
 def mbbins_md04_bpa55(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -344,7 +344,7 @@ def mbbins_md04_bpa55(samples1, samples2, func=f):
 
 
 def mbbins_md1_bpa1010(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -355,7 +355,7 @@ def mbbins_md1_bpa1010(samples1, samples2, func=f):
 
 
 def mbbins_md04_bpa1010(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -366,7 +366,7 @@ def mbbins_md04_bpa1010(samples1, samples2, func=f):
 
 
 def mbbins_md1_bpa55_emdf(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -378,7 +378,7 @@ def mbbins_md1_bpa55_emdf(samples1, samples2, func=f):
 
 
 def mbbins_md04_bpa55_emdf(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         0.4,
@@ -390,7 +390,7 @@ def mbbins_md04_bpa55_emdf(samples1, samples2, func=f):
 
 
 def mbbins_md1_bpa1010_emdf(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -402,7 +402,7 @@ def mbbins_md1_bpa1010_emdf(samples1, samples2, func=f):
 
 
 def mbbins_md04_bpa1010_emdf(samples1, samples2, func=f):
-    mbmapped_distance_matrix(
+    return mbmapped_distance_matrix(
         samples1,
         samples2,
         1,
@@ -429,12 +429,22 @@ benchmarks = [
 def do_benchmark(samples1, samples2):
     time_measured = []
     labels = []
+    equal = []
+
+    sample = None
     for bc in tqdm(benchmarks):
         labels.append(bc.__name__)
         start = time()
-        bc(samples1, samples2)
+        mat = bc(samples1, samples2)
         time_measured.append(time() - start)
 
+        if sample is None:
+            sample = mat
+            equal.append("SA")
+        else:
+            np.testing.assert_allclose(sample, mat, atol=1.e-1)
+            equal.append("EQ" if np.allclose(sample, mat, atol=1.e-20) else "NEQ")
+
     print("Results:")
-    for label, t in zip(labels, time_measured):
-        print("- {} : {} seconds".format(label, t))
+    for label, t, eq in zip(labels, time_measured, equal):
+        print("- {} : {} seconds ({})".format(label, t, eq))
