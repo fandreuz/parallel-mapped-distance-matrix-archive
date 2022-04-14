@@ -413,6 +413,108 @@ def mbbins_md04_bpa1010_emdf(samples1, samples2, func=f):
     ).compute()
 
 
+# ----- binsperchunk
+
+def mbbins_md1_bpa44_bpc4(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[4,4],
+        should_vectorize=False,
+        bins_per_chunk=4
+    ).compute()
+
+
+def mbbins_md04_bpa44_bpc4(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        0.4,
+        func,
+        bins_per_axis=[4,4],
+        should_vectorize=False,
+        bins_per_chunk=4
+    ).compute()
+
+
+def mbbins_md1_bpa66_bpc9(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[6, 6],
+        should_vectorize=False,
+        bins_per_chunk=9
+    ).compute()
+
+
+def mbbins_md04_bpa66_bpc9(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[6, 6],
+        should_vectorize=False,
+        bins_per_chunk=9
+    ).compute()
+
+
+def mbbins_md1_bpa44_emdf_bpc4(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[4, 4],
+        should_vectorize=False,
+        exact_max_distance=False,
+        bins_per_chunk=4
+    ).compute()
+
+
+def mbbins_md04_bpa44_emdf_bpc4(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        0.4,
+        func,
+        bins_per_axis=[4, 4],
+        should_vectorize=False,
+        exact_max_distance=False,
+        bins_per_chunk=4
+    ).compute()
+
+
+def mbbins_md1_bpa66_emdf_bpc9(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[6, 6],
+        should_vectorize=False,
+        exact_max_distance=False,
+        bins_per_chunk=9
+    ).compute()
+
+
+def mbbins_md04_bpa66_emdf_bpc9(samples1, samples2, func=f):
+    return mbmapped_distance_matrix(
+        samples1,
+        samples2,
+        1,
+        func,
+        bins_per_axis=[6, 6],
+        should_vectorize=False,
+        exact_max_distance=False,
+        bins_per_chunk=9
+    ).compute()
+
+
 benchmarks = [
     pycsou,
     mbbins_md1_bpa55,
@@ -423,6 +525,14 @@ benchmarks = [
     mbbins_md04_bpa55_emdf,
     mbbins_md1_bpa1010_emdf,
     mbbins_md04_bpa1010_emdf,
+    mbbins_md1_bpa44_bpc4,
+    mbbins_md04_bpa44_bpc4,
+    mbbins_md1_bpa66_bpc9,
+    mbbins_md04_bpa66_bpc9,
+    mbbins_md1_bpa44_emdf_bpc4,
+    mbbins_md04_bpa44_emdf_bpc4,
+    mbbins_md1_bpa66_emdf_bpc9,
+    mbbins_md04_bpa66_emdf_bpc9,
 ]
 
 
@@ -443,7 +553,7 @@ def do_benchmark(samples1, samples2):
             equal.append("SA")
         else:
             np.testing.assert_allclose(sample, mat, atol=1.e-1)
-            equal.append("EQ" if np.allclose(sample, mat, atol=1.e-20) else "NEQ")
+            equal.append("EQ" if np.allclose(sample, mat, atol=1.e-20) else "NEQ {}".format(np.max(np.abs(sample - mat))))
 
     print("Results:")
     for label, t, eq in zip(labels, time_measured, equal):
