@@ -149,7 +149,7 @@ def mapped_distance_matrix(
     bins_per_axis=None,
     should_vectorize=True,
     exact_max_distance=True,
-    bins_per_thread="auto",
+    bins_per_chunk="auto",
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
 
@@ -169,7 +169,7 @@ def mapped_distance_matrix(
         raise ValueError("The number of bins must be an integer number")
 
     bins, indexes_inside_bins = fill_bins(
-        pts1, bins_per_axis, region_dimension, bins_per_chunk=bins_per_thread
+        pts1, bins_per_axis, region_dimension, bins_per_chunk=bins_per_chunk
     )
     bins_bounds = compute_bounds(bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
@@ -233,7 +233,7 @@ def mapped_distance_matrix(
     )
 
     mapped_distance_chunks = (new_chunks_pts1, (len(pts2),))
-    mapped_distance = np.zeros((len(pts1), len(pts2)))
+    mapped_distance = da.from_array(np.zeros((len(pts1), len(pts2))))
     mapped_distance[non_empty_bins_mapping] = da.map_blocks(
         pcompute_mapped_distance_on_chunk,
         bins,
@@ -248,6 +248,6 @@ def mapped_distance_matrix(
         chunks=mapped_distance_chunks,
         dtype=pts1.dtype,
         meta=np.array((), dtype=pts1.dtype),
-    ).compute()
+    )
 
     return mapped_distance
