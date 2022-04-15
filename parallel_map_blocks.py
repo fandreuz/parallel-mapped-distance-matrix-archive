@@ -35,11 +35,11 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     # for each non-uniform point, this gives the linearized coordinate of the
     # appropriate bin
     linearized_bin_coords = da.dot(bin_coords, shifted_nbins_per_axis[:, None])
-    linearized_bin_coords = np.hstack(
+    aug_linearized_bin_coords = np.hstack(
         [linearized_bin_coords.compute(), np.arange(len(pts))[:, None]]
     )
 
-    indexes_inside_bins = group_by(linearized_bin_coords)
+    indexes_inside_bins = group_by(aug_linearized_bin_coords)
 
     nbins = len(indexes_inside_bins)
     lengths = tuple(map(len, indexes_inside_bins))
@@ -62,6 +62,10 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
         .rechunk(bins_chunks)
         .reshape(nbins, biggest_bin, pts_da.shape[1])
     )
+
+    del pts_da
+    del bin_coords
+    del linearized_bin_coords
 
     return bins, indexes_inside_bins
 
