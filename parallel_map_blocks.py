@@ -17,20 +17,19 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     h = np.divide(region_dimension, bins_per_axis)
 
     pts_da = da.from_array(pts, chunks=("auto", -1))
-    bin_coords = da.floor_divide(pts, h).astype(int)
+    bin_coords = da.floor_divide(pts_da, h).astype(int)
     # moves to the last bin of the axis any point which is outside the region
     # defined by pts2.
     da.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
-    # for each non-uniform point, gives the linearized coordinate of the
-    # appropriate bin
-    shifted_nbins_per_axis = np.ones_like(bins_per_axis)
+    shifted_nbins_per_axis = da.ones_like(bins_per_axis)
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
-    # we re-use the first column of bin_coords
+    # for each non-uniform point, this gives the linearized coordinate of the
+    # appropriate bin
     linearized_bin_coords = da.dot(bin_coords, shifted_nbins_per_axis[:, None])
-    linearized_bin_coords = da.hstack(
-        [linearized_bin_coords, da.arange(len(pts))[:, None]]
-    ).compute()
+    linearized_bin_coords = np.hstack(
+        [linearized_bin_coords.compute(), np.arange(len(pts))[:, None]]
+    )
 
     indexes_inside_bins = group_by(linearized_bin_coords)
 
@@ -52,7 +51,7 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
 
 
 def compute_bounds(bins):
-    plus_minus = np.array([-1, 1])[:, None]
+    plus_minus = np.array([-1, 1], dtype=int)[:, None]
     nbins_per_chunk = max(bins.chunks[0])
     _, npts_per_bin, ndims = bins.shape
 
@@ -83,7 +82,7 @@ def compute_bounds(bins):
 
 
 def compute_padded_bounds(boundaries, distance):
-    plus_minus = distance * np.array([-1, 1])[:, None]
+    plus_minus = distance * np.array([-1, 1], dtype=int)[:, None]
     return da.map_blocks(
         lambda bs: bs + plus_minus,
         boundaries,
