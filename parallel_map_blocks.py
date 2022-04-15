@@ -6,11 +6,19 @@ from numbers import Integral, Number
 from dask.array.core import Array
 
 from functools import partial
+from itertools import chain
 
 
 def group_by(a):
     a = a[a[:, 0].argsort()]
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
+
+
+def generate_binified_points_matrix(pts_da, indexes, bins_size):
+    for idx in range(len(indexes)):
+        yield pts_da[indexes[idx]], da.zeros(
+            (bins_size - len(indexes[idx]), pts_da.shape[1])
+        )
 
 
 def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
@@ -38,14 +46,22 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     biggest_bin = max(lengths)
     smallest_bin = min(lengths)
 
-    bins = da.from_array(
-        np.zeros((nbins, biggest_bin, pts.shape[1])),
-        chunks=(bins_per_chunk, -1, -1),
+    if bins_per_chunk == "auto":
+        bins_chunks = ("auto", -1)
+    else:
+        bins_chunks = (biggest_bin * bins_per_chunk, -1)
+
+    bins = (
+        da.vstack(
+            chain.from_iterable(
+                generate_binified_points_matrix(
+                    pts_da, indexes_inside_bins, biggest_bin
+                )
+            )
+        )
+        .rechunk(bins_chunks)
+        .reshape(nbins, biggest_bin, pts_da.shape[1])
     )
-    # TODO improve this
-    for bin_idx in range(nbins):
-        ps = pts[indexes_inside_bins[bin_idx]]
-        bins[bin_idx, : len(ps)] = ps
 
     return bins, indexes_inside_bins
 
@@ -108,8 +124,8 @@ def compute_mapped_distance_on_chunk(
     exact_max_distance,
 ):
     # re-establish the proper dimensions for these matrices
-    n_pts1_inside_chunk = n_pts1_inside_chunk[:,0,0]
-    inclusion_submatrix = inclusion_submatrix[...,0]
+    n_pts1_inside_chunk = n_pts1_inside_chunk[:, 0, 0]
+    inclusion_submatrix = inclusion_submatrix[..., 0]
 
     # TODO shall this be a dask array?
     submatrix = np.zeros((np.sum(n_pts1_inside_chunk), len(pts2)))
