@@ -15,10 +15,10 @@ def group_by(a):
 
 
 def generate_binified_points_matrix(pts_da, indexes, bins_size):
+    zs = da.zeros((bins_size - 1, pts_da.shape[1]))
     for idx in range(len(indexes)):
-        yield pts_da[indexes[idx]], da.zeros(
-            (bins_size - len(indexes[idx]), pts_da.shape[1])
-        )
+        idx = indexes[idx]
+        yield pts_da[idx], zs[:bins_size - len(idx)]
 
 
 def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
