@@ -18,7 +18,7 @@ def generate_binified_points_matrix(pts_da, indexes, bins_size):
     zs = da.zeros((bins_size - 1, pts_da.shape[1]))
     for idx in range(len(indexes)):
         idx = indexes[idx]
-        yield pts_da[idx], zs[:bins_size - len(idx)]
+        yield pts_da[idx], zs[: bins_size - len(idx)]
 
 
 def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
@@ -134,8 +134,14 @@ def compute_mapped_distance_on_chunk(
     # TODO shall this be a dask array?
     submatrix = np.zeros((np.sum(n_pts1_inside_chunk), len(pts2)))
 
+    bin_idxes = np.arange(len(pts1_in_chunk))[
+        np.logical_and(
+            n_pts1_inside_chunk > 0, np.any(inclusion_submatrix, axis=1)
+        )
+    ]
+
     last_written = 0
-    for bin_idx in range(len(pts1_in_chunk)):
+    for bin_idx in bin_idxes:
         pts1_in_bin = pts1_in_chunk[bin_idx, : n_pts1_inside_chunk[bin_idx]]
 
         inclusion_vector = inclusion_submatrix[bin_idx]
@@ -195,28 +201,6 @@ def mapped_distance_matrix(
 
     inclusion_matrix_da = match_points_and_bins(padded_bin_bounds, pts2).T
 
-    # we exclude some bins due to the fact that no points in pts2 belong to them
-
-    # boolean indexing with dask arrays does not work at the moment
-    # non_empty_bins = da.any(inclusion_matrix, axis=0)
-
-    inclusion_matrix = inclusion_matrix_da.compute()
-    non_empty_bins = np.any(inclusion_matrix, axis=1)
-
-    bins = bins[non_empty_bins]
-    inclusion_matrix = inclusion_matrix[non_empty_bins]
-
-    nbins = len(indexes_inside_bins)
-    # this is used to move in the proper position of the final matrix
-    # the row of the matrix produced by vstack
-    indexes_inside_bins = [
-        indexes_inside_bins[i] for i in range(nbins) if non_empty_bins[i]
-    ]
-    non_empty_bins_mapping = np.concatenate(
-        indexes_inside_bins,
-        dtype=int,
-    )
-
     # we take one for each bin in each chunk
     n_pts1_inside_bins = np.fromiter(map(len, indexes_inside_bins), dtype=int)
 
@@ -251,9 +235,14 @@ def mapped_distance_matrix(
         (inclusion_matrix_da.chunks[0], inclusion_matrix_da.chunks[1], (1,))
     )
 
+    bins_mapping = np.concatenate(
+        indexes_inside_bins,
+        dtype=int,
+    )
+
     mapped_distance_chunks = (new_chunks_pts1, (len(pts2),))
     mapped_distance = da.from_array(np.zeros((len(pts1), len(pts2))))
-    mapped_distance[non_empty_bins_mapping] = da.map_blocks(
+    mapped_distance[bins_mapping] = da.map_blocks(
         pcompute_mapped_distance_on_chunk,
         bins,
         n_pts1_inside_bins_da,
