@@ -552,8 +552,7 @@ def do_benchmark(samples1, samples2):
             sample = mat
             equal.append("SA")
         else:
-            np.testing.assert_allclose(sample, mat, atol=1.e-1)
-            equal.append("EQ" if np.allclose(sample, mat, atol=1.e-20) else "NEQ {}".format(np.max(np.abs(sample - mat))))
+            equal.append("EQ" if np.allclose(sample, mat, atol=1.e-16) else "NEQ {}".format(np.max(np.abs(sample - mat))))
 
     print("Results:")
     for label, t, eq in zip(labels, time_measured, equal):
