@@ -116,10 +116,10 @@ def compute_padded_bounds(boundaries, distance):
 
 
 def match_points_and_bins(bins_bounds, points):
-    broadcastable_points = points[:, None]
+    broadcastable_points = points[None]
     return da.logical_and(
-        da.all(bins_bounds[:, 0] < broadcastable_points, axis=2),
-        da.all(broadcastable_points < bins_bounds[:, 1], axis=2),
+        da.all(bins_bounds[:, None, 0] < broadcastable_points, axis=2),
+        da.all(broadcastable_points < bins_bounds[:, None, 1], axis=2),
     )
 
 
@@ -204,7 +204,7 @@ def mapped_distance_matrix(
     bins_bounds = compute_bounds(bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
 
-    inclusion_matrix_da = match_points_and_bins(padded_bin_bounds, pts2).T
+    inclusion_matrix_da = match_points_and_bins(padded_bin_bounds, pts2)
     del bins_bounds
     del padded_bin_bounds
 
