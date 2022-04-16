@@ -147,16 +147,16 @@ def compute_mapped_distance_on_chunk(
         inclusion_vector = inclusion_submatrix[bin_idx]
         padded_bin_pts2 = pts2[inclusion_vector]
 
-        distances_da = da.linalg.norm(
+        distances = np.linalg.norm(
             pts1_in_bin[:, None, :] - padded_bin_pts2[None, ...], axis=-1
         )
-        mapped_distance = func(distances_da)
 
         if exact_max_distance:
-            distances = distances_da
-            too_far = distances > max_distance
-            mapped_distance = mapped_distance
-            mapped_distance[too_far] = 0
+            nearby = distances < max_distance
+            mapped_distance = np.zeros_like(distances)
+            mapped_distance[nearby] = func(distances[nearby])
+        else:
+            mapped_distance = func(distances)
 
         submatrix[
             last_written : last_written + n_pts1_inside_chunk[bin_idx],
