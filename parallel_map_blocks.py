@@ -15,7 +15,7 @@ def group_by(a):
 
 
 def generate_binified_points_matrix(pts_da, indexes, bins_size):
-    zs = da.zeros((bins_size - 1, pts_da.shape[1]))
+    zs = da.zeros((bins_size - 1, pts_da.shape[1]), name="zeros_bucket")
     for idx in range(len(indexes)):
         idx = indexes[idx]
         yield pts_da[idx], zs[: bins_size - len(idx)]
@@ -24,13 +24,15 @@ def generate_binified_points_matrix(pts_da, indexes, bins_size):
 def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     h = np.divide(region_dimension, bins_per_axis)
 
-    pts_da = da.from_array(pts, chunks=("auto", -1))
+    pts_da = da.from_array(pts, chunks=("auto", -1), name="dask_pts1")
     bin_coords = da.floor_divide(pts_da, h).astype(int)
     # moves to the last bin of the axis any point which is outside the region
     # defined by pts2.
     da.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
-    shifted_nbins_per_axis = da.ones_like(bins_per_axis)
+    shifted_nbins_per_axis = da.ones_like(
+        bins_per_axis, name="shifted_nbins_per_axis"
+    )
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
     # for each non-uniform point, this gives the linearized coordinate of the
     # appropriate bin
@@ -83,6 +85,7 @@ def compute_bounds(bins):
         chunks=(nbins_per_chunk, npts_per_bin, 2, ndims),
         new_axis=(2,),
         meta=np.array((), dtype=bins.dtype),
+        name="2x!pts1",
     )
 
     # find maximum of positive and negative axes
@@ -98,6 +101,7 @@ def compute_bounds(bins):
         bounds,
         dtype=bounds.dtype,
         meta=np.array((), dtype=bins.dtype),
+        name="max_min_per_bin",
     )
 
 
@@ -107,6 +111,7 @@ def compute_padded_bounds(boundaries, distance):
         lambda bs: bs + plus_minus,
         boundaries,
         meta=np.array((), dtype=boundaries.dtype),
+        name="padded_bounds",
     )
 
 
@@ -200,6 +205,8 @@ def mapped_distance_matrix(
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
 
     inclusion_matrix_da = match_points_and_bins(padded_bin_bounds, pts2).T
+    del bins_bounds
+    del padded_bin_bounds
 
     # we take one for each bin in each chunk
     n_pts1_inside_bins = np.fromiter(map(len, indexes_inside_bins), dtype=int)
@@ -229,7 +236,9 @@ def mapped_distance_matrix(
     )
 
     n_pts1_inside_bins_da = da.from_array(
-        n_pts1_inside_bins[:, None, None], chunks=(bins.chunks[0], 1, 1)
+        n_pts1_inside_bins[:, None, None],
+        chunks=(bins.chunks[0], 1, 1),
+        name="n_pts1_per_bin",
     )
     inclusion_matrix_da = inclusion_matrix_da[..., None].rechunk(
         (inclusion_matrix_da.chunks[0], inclusion_matrix_da.chunks[1], (1,))
@@ -241,7 +250,10 @@ def mapped_distance_matrix(
     )
 
     mapped_distance_chunks = (new_chunks_pts1, (len(pts2),))
-    mapped_distance = da.from_array(np.zeros((len(pts1), len(pts2))))
+    mapped_distance = da.from_array(
+        np.zeros((len(pts1), len(pts2))), name="mapped_distance"
+    )
+
     mapped_distance[bins_mapping] = da.map_blocks(
         pcompute_mapped_distance_on_chunk,
         bins,
@@ -256,6 +268,7 @@ def mapped_distance_matrix(
         chunks=mapped_distance_chunks,
         dtype=pts1.dtype,
         meta=np.array((), dtype=pts1.dtype),
+        name="submt_mapped_distance",
     )
 
     return mapped_distance
