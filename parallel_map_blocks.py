@@ -24,21 +24,20 @@ def generate_binified_points_matrix(pts_da, indexes, bins_size):
 def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     h = np.divide(region_dimension, bins_per_axis)
 
-    pts_da = da.from_array(pts, chunks=("auto", -1), name="dask_pts1")
-    bin_coords = da.floor_divide(pts_da, h).astype(int)
+    bin_coords = np.floor_divide(pts, h).astype(int)
     # moves to the last bin of the axis any point which is outside the region
     # defined by pts2.
-    da.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
+    np.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
-    shifted_nbins_per_axis = da.ones_like(
-        bins_per_axis, name="shifted_nbins_per_axis"
+    shifted_nbins_per_axis = np.ones_like(
+        bins_per_axis
     )
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
     # for each non-uniform point, this gives the linearized coordinate of the
     # appropriate bin
-    linearized_bin_coords = da.dot(bin_coords, shifted_nbins_per_axis[:, None])
+    linearized_bin_coords = np.dot(bin_coords, shifted_nbins_per_axis[:, None])
     aug_linearized_bin_coords = np.hstack(
-        [linearized_bin_coords.compute(), np.arange(len(pts))[:, None]]
+        [linearized_bin_coords, np.arange(len(pts))[:, None]]
     )
 
     indexes_inside_bins = group_by(aug_linearized_bin_coords)
@@ -57,17 +56,13 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
         da.vstack(
             chain.from_iterable(
                 generate_binified_points_matrix(
-                    pts_da, indexes_inside_bins, biggest_bin
+                    pts, indexes_inside_bins, biggest_bin
                 )
             )
         )
         .rechunk(bins_chunks)
-        .reshape(nbins, biggest_bin, pts_da.shape[1])
+        .reshape(nbins, biggest_bin, pts.shape[1])
     )
-
-    del pts_da
-    del bin_coords
-    del linearized_bin_coords
 
     return bins, indexes_inside_bins
 
