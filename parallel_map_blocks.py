@@ -29,9 +29,7 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     # defined by pts2.
     np.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
-    shifted_nbins_per_axis = np.ones_like(
-        bins_per_axis
-    )
+    shifted_nbins_per_axis = np.ones_like(bins_per_axis)
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
     # for each non-uniform point, this gives the linearized coordinate of the
     # appropriate bin
@@ -118,7 +116,7 @@ def match_points_and_bins(bins_bounds, points):
     )
 
 
-def compute_mapped_distance_on_chunk(
+def compute_mapped_distance_on_aggregated_chunk(
     pts1_in_chunk,
     n_pts1_inside_chunk,
     inclusion_submatrix,
@@ -131,39 +129,84 @@ def compute_mapped_distance_on_chunk(
     n_pts1_inside_chunk = n_pts1_inside_chunk[:, 0, 0]
     inclusion_submatrix = inclusion_submatrix[..., 0]
 
-    # TODO shall this be a dask array?
-    submatrix = np.zeros((np.sum(n_pts1_inside_chunk), len(pts2)))
+    biggest_bin = np.max(n_pts1_inside_chunk)
 
-    bin_idxes = np.arange(len(pts1_in_chunk))[
-        np.logical_and(
-            n_pts1_inside_chunk > 0, np.any(inclusion_submatrix, axis=1)
+    nbins = len(pts1_in_chunk)
+    # which bins should we consider?
+    # bin_idxes = np.arange(nbins)[
+    #     np.logical_and(
+    #         n_pts1_inside_chunk > 0,  # only those which are non-empty
+    #         np.any(inclusion_submatrix, axis=1),  # at least one point of pts2
+    #     )
+    # ]
+    # nbins = len(bin_idxes)
+
+    # rows, columns = np.nonzero(inclusion_submatrix[bin_idxes])
+    rows, columns = np.nonzero(inclusion_submatrix)
+    # number of occurrences for each bin
+    _, indexes, counts = np.unique(rows, return_index=True, return_counts=True)
+
+    # this is used to redirect indexes which we are not interested in
+    null_index = len(pts2)
+    null_point = pts2[0][None]
+    augmented_pts2 = np.vstack((pts2, null_point))
+
+    # biggest number of intersections with pts2 among the bins in this chunk
+    most_intersections = np.max(counts)
+    reindexing_matrix = np.full(
+        (nbins, most_intersections), null_index, dtype=int
+    )
+    reindexing_matrix[rows[indexes[0]], : indexes[1]] = columns[: indexes[1]]
+    for bin_idx in range(1, len(indexes)):
+        reindexing_matrix[
+            rows[indexes[bin_idx]],
+            : (indexes[bin_idx] - indexes[bin_idx - 1]),
+        ] = columns[indexes[bin_idx - 1] : indexes[bin_idx]]
+
+    # we concatenate a zero to pts2 in order to have something in the null
+    # index
+    rpadded_bin_pts2 = augmented_pts2[reindexing_matrix]
+
+    distances = np.linalg.norm(
+        pts1_in_chunk[:, :biggest_bin, None, :]
+        - rpadded_bin_pts2[:, None, ...],
+        axis=-1,
+    )
+
+    # we split distances, drop the parts which are not supposed to be returned
+    # i.e fake points not in the bin
+    distances = distances.reshape(-1, len(pts2))
+
+    cap_array = np.cumsum(np.full(len(n_pts1_inside_chunk), biggest_bin))
+    shifted_cap_array = np.concatenate(([0], cap_array[:-1]))
+
+    adj_n_pts1_inside_chunk = n_pts1_inside_chunk + shifted_cap_array
+
+    split_idxes = np.stack((adj_n_pts1_inside_chunk, cap_array)).reshape(
+        (1, -1), order="F"
+    )[0]
+    splitted = np.split(distances, split_idxes)
+
+    distances = np.vstack(
+        tuple(splitted[i] for i in range(0, len(splitted), 2))
+    )
+
+    ninclusion_submatrix = np.logical_not(inclusion_submatrix)[:,None]
+    mapped_distance = func(distances)
+    # TODO improve
+    null_pts2_mask = np.vstack(
+        tuple(
+            np.repeat(
+                ninclusion_submatrix[i],
+                repeats=n_pts1_inside_chunk[i],
+                axis=0,
+            )
+            for i in range(nbins)
         )
-    ]
+    )
+    mapped_distance[null_pts2_mask] = 0
 
-    last_written = 0
-    for bin_idx in bin_idxes:
-        pts1_in_bin = pts1_in_chunk[bin_idx, : n_pts1_inside_chunk[bin_idx]]
-
-        inclusion_vector = inclusion_submatrix[bin_idx]
-        padded_bin_pts2 = pts2[inclusion_vector]
-
-        distances = np.linalg.norm(
-            pts1_in_bin[:, None, :] - padded_bin_pts2[None, ...], axis=-1
-        )
-
-        if exact_max_distance:
-            nearby = distances < max_distance
-            mapped_distance = np.zeros_like(distances)
-            mapped_distance[nearby] = func(distances[nearby])
-        else:
-            mapped_distance = func(distances)
-
-        submatrix[
-            last_written : last_written + n_pts1_inside_chunk[bin_idx],
-            inclusion_vector,
-        ] = mapped_distance
-        last_written += n_pts1_inside_chunk[bin_idx]
-    return submatrix
+    return mapped_distance
 
 
 def mapped_distance_matrix(
@@ -223,7 +266,7 @@ def mapped_distance_matrix(
         )
 
     pcompute_mapped_distance_on_chunk = partial(
-        compute_mapped_distance_on_chunk,
+        compute_mapped_distance_on_aggregated_chunk,
         pts2=pts2,
         max_distance=max_distance,
         exact_max_distance=exact_max_distance,
