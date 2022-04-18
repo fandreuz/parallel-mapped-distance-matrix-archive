@@ -126,7 +126,16 @@ def compute_mapped_distance_on_chunk(
         )
     ]
 
-    for bin_idx in non_trivial_bins:
+    write_indexes = np.cumsum(
+        np.multiply(
+            n_pts1_inside_chunk[non_trivial_bins],
+            np.count_nonzero(inclusion_submatrix[non_trivial_bins], axis=1),
+        )
+    )
+    write_indexes = np.concatenate(([0], write_indexes), dtype=int)
+    distances_all_bins = np.zeros(write_indexes[-1], dtype=pts1_in_chunk.dtype)
+
+    for idx, bin_idx in enumerate(non_trivial_bins):
         pts1_in_bin = pts1_in_chunk[bin_idx, : n_pts1_inside_chunk[bin_idx]]
 
         inclusion_vector = inclusion_submatrix[bin_idx]
@@ -136,18 +145,24 @@ def compute_mapped_distance_on_chunk(
             pts1_in_bin[:, None, :] - padded_bin_pts2[None, ...], axis=-1
         )
 
-        if exact_max_distance:
-            nearby = distances < max_distance
-            mapped_distance = np.zeros_like(distances)
-            mapped_distance[nearby] = func(distances[nearby])
-        else:
-            mapped_distance = func(distances)
+        distances_all_bins[
+            write_indexes[idx] : write_indexes[idx + 1]
+        ] = distances.reshape((1, -1))[0]
 
+    mapped_distances = func(distances_all_bins)
+
+    for idx, bin_idx in enumerate(non_trivial_bins):
         start = bin_start_indexes[bin_idx]
+        inclusion_vector = inclusion_submatrix[bin_idx]
+
+        submapped_distance = mapped_distances[
+            write_indexes[idx] : write_indexes[idx + 1]
+        ].reshape((n_pts1_inside_chunk[bin_idx], -1))
+
         submatrix[
             start : start + n_pts1_inside_chunk[bin_idx],
             inclusion_vector,
-        ] = mapped_distance
+        ] = submapped_distance
     return submatrix
 
 
