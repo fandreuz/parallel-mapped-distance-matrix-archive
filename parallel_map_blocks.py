@@ -29,9 +29,7 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     # defined by pts2.
     np.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
-    shifted_nbins_per_axis = np.ones_like(
-        bins_per_axis
-    )
+    shifted_nbins_per_axis = np.ones_like(bins_per_axis)
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
     # for each non-uniform point, this gives the linearized coordinate of the
     # appropriate bin
@@ -131,17 +129,20 @@ def compute_mapped_distance_on_chunk(
     n_pts1_inside_chunk = n_pts1_inside_chunk[:, 0, 0]
     inclusion_submatrix = inclusion_submatrix[..., 0]
 
+    bin_start_indexes = np.concatenate(
+        ([0], np.cumsum(n_pts1_inside_chunk[:-1])), dtype=int
+    )
+
     # TODO shall this be a dask array?
     submatrix = np.zeros((np.sum(n_pts1_inside_chunk), len(pts2)))
 
-    bin_idxes = np.arange(len(pts1_in_chunk))[
+    non_trivial_bins = np.arange(len(pts1_in_chunk))[
         np.logical_and(
             n_pts1_inside_chunk > 0, np.any(inclusion_submatrix, axis=1)
         )
     ]
 
-    last_written = 0
-    for bin_idx in bin_idxes:
+    for bin_idx in non_trivial_bins:
         pts1_in_bin = pts1_in_chunk[bin_idx, : n_pts1_inside_chunk[bin_idx]]
 
         inclusion_vector = inclusion_submatrix[bin_idx]
@@ -158,11 +159,11 @@ def compute_mapped_distance_on_chunk(
         else:
             mapped_distance = func(distances)
 
+        start = bin_start_indexes[bin_idx]
         submatrix[
-            last_written : last_written + n_pts1_inside_chunk[bin_idx],
+            start : start + n_pts1_inside_chunk[bin_idx],
             inclusion_vector,
         ] = mapped_distance
-        last_written += n_pts1_inside_chunk[bin_idx]
     return submatrix
 
 
