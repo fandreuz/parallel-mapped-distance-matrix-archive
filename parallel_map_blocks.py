@@ -235,6 +235,7 @@ def mapped_distance_matrix(
         n_pts1_inside_bins[:, None, None],
         chunks=(bins.chunks[0], 1, 1),
         name="n_pts1_per_bin",
+        meta=np.array((), dtype=int),
     )
     inclusion_matrix_da = inclusion_matrix_da[..., None].rechunk(
         (inclusion_matrix_da.chunks[0], inclusion_matrix_da.chunks[1], (1,))
@@ -247,7 +248,9 @@ def mapped_distance_matrix(
 
     mapped_distance_chunks = (new_chunks_pts1, (len(pts2),))
     mapped_distance = da.from_array(
-        np.zeros((len(pts1), len(pts2))), name="mapped_distance"
+        np.zeros((len(pts1), len(pts2))),
+        name="mapped_distance",
+        meta=np.array((), dtype=pts1.dtype),
     )
 
     mapped_distance[bins_mapping] = da.map_blocks(
