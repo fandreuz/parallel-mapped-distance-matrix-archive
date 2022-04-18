@@ -1,24 +1,12 @@
-from serial import group_by
-
 import numpy as np
 import dask.array as da
-from numbers import Integral, Number
-from dask.array.core import Array
 
 from functools import partial
-from itertools import chain
 
 
 def group_by(a):
     a = a[a[:, 0].argsort()]
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
-
-
-def generate_binified_points_matrix(pts_da, indexes, bins_size):
-    zs = da.zeros((bins_size - 1, pts_da.shape[1]), name="zeros_bucket")
-    for idx in range(len(indexes)):
-        idx = indexes[idx]
-        yield pts_da[idx], zs[: bins_size - len(idx)]
 
 
 def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
@@ -50,17 +38,13 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     else:
         bins_chunks = (biggest_bin * bins_per_chunk, -1)
 
-    bins = (
-        da.vstack(
-            chain.from_iterable(
-                generate_binified_points_matrix(
-                    pts, indexes_inside_bins, biggest_bin
-                )
-            )
-        )
-        .rechunk(bins_chunks)
-        .reshape(nbins, biggest_bin, pts.shape[1])
+    bins = da.from_array(
+        np.zeros((nbins, biggest_bin, pts.shape[1])),
+        chunks=(bins_per_chunk, -1, -1),
     )
+    for bin_idx in range(nbins):
+        ps = pts[indexes_inside_bins[bin_idx]]
+        bins[bin_idx, : len(ps)] = ps
 
     return bins, indexes_inside_bins
 
