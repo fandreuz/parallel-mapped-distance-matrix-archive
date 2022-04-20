@@ -15,6 +15,10 @@ elif int(sys.argv[1]) == 1:
     from big_data import samples1, samples2, func
 elif int(sys.argv[1]) == 2:
     from biggest_data import samples1, samples2, func
+elif int(sys.argv[1]) == 3:
+    from biggest_data2 import samples1, samples2, func
+elif int(sys.argv[1]) >= 4:
+    from scattered import samples1, samples2, func
 
 start = time()
 mapped_distance_matrix(
