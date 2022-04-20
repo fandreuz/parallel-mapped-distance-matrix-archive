@@ -31,7 +31,7 @@ print(time() - start)
 """)
 
 bpcs = [1, 2, 5, 10, 15, 20]
-bpas = [1, 2, 5, 10, 15, 20, 50, 100, 250]
+bpas = [1, 2, 5, 10, 15, 20, 50]
 
 for bpa, bpc in product(bpas, bpcs):
     if bpc < bpa * bpa:
