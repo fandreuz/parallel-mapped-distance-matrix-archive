@@ -4,24 +4,24 @@ from itertools import product
 t = Template("""
 from pathlib import Path
 import sys
-sys.path.append(Path(__file__).parent.parent)
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from parallel_map_blocks import mapped_distance_matrix
 from time import time
 
-if int(data[sys.argv[2]]) == 0:
+if int(sys.argv[1]) == 0:
     from data import samples1, samples2, func
-elif int(data[sys.argv[2]]) == 1:
+elif int(sys.argv[1]) == 1:
     from big_data import samples1, samples2, func
-elif int(data[sys.argv[2]]) == 2:
+elif int(sys.argv[1]) == 2:
     from biggest_data import samples1, samples2, func
 
 start = time()
 mapped_distance_matrix(
-    samples1=samples1,
-    samples2=samples2,
-    max_distance=float(sys.argv[1]),
-    function=func,
+    pts1=samples1,
+    pts2=samples2,
+    max_distance=float(sys.argv[2]),
+    func=func,
     bins_per_axis=[$bpa, $bpa],
     should_vectorize=False,
     exact_max_distance=False,
