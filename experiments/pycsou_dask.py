@@ -16,5 +16,6 @@ MappedDistanceMatrix(
     function=func,
     operator_type="dask",
     max_distance=float(sys.argv[2]),
+    dtype=samples1.dtype
 ).mat.compute()
 print(time() - start)

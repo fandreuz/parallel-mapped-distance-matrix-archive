@@ -17,6 +17,7 @@ MappedDistanceMatrix(
     operator_type="sparse",
     max_distance=float(sys.argv[2]),
     n_jobs=-1,
-    verbose=False
+    verbose=False,
+    dtype=samples1.dtype
 )
 print(time() - start)
