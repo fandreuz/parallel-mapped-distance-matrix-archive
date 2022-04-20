@@ -17,7 +17,7 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     # defined by pts2.
     np.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
-    shifted_nbins_per_axis = np.ones_like(bins_per_axis)
+    shifted_nbins_per_axis = np.ones_like(bins_per_axis, dtype=int)
     shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
     # for each non-uniform point, this gives the linearized coordinate of the
     # appropriate bin
@@ -39,7 +39,7 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
         bins_chunks = (biggest_bin * bins_per_chunk, -1)
 
     bins = da.from_array(
-        np.zeros((nbins, biggest_bin, pts.shape[1])),
+        np.zeros((nbins, biggest_bin, pts.shape[1]), dtype=pts.dtype),
         chunks=(bins_per_chunk, -1, -1),
     )
     for bin_idx in range(nbins):
@@ -118,7 +118,9 @@ def compute_mapped_distance_on_chunk(
     )
 
     # TODO shall this be a dask array?
-    submatrix = np.zeros((np.sum(n_pts1_inside_chunk), len(pts2)))
+    submatrix = np.zeros(
+        (np.sum(n_pts1_inside_chunk), len(pts2)), dtype=pts1_in_chunk.dtype
+    )
 
     non_trivial_bins = np.arange(len(pts1_in_chunk))[
         np.logical_and(
@@ -138,7 +140,7 @@ def compute_mapped_distance_on_chunk(
 
         if exact_max_distance:
             nearby = distances < max_distance
-            mapped_distance = np.zeros_like(distances)
+            mapped_distance = np.zeros_like(distances, dtype=pts1_in_bin.dtype)
             mapped_distance[nearby] = func(distances[nearby])
         else:
             mapped_distance = func(distances)
@@ -232,7 +234,7 @@ def mapped_distance_matrix(
 
     mapped_distance_chunks = (new_chunks_pts1, (len(pts2),))
     mapped_distance = da.from_array(
-        np.zeros((len(pts1), len(pts2))),
+        np.zeros((len(pts1), len(pts2)), dtype=pts1.dtype),
         name="mapped_distance",
         meta=np.array((), dtype=pts1.dtype),
     )
