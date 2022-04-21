@@ -1,5 +1,6 @@
 import numpy as np
 import dask.array as da
+from scipy.sparse import bsr_matrix
 
 from functools import partial
 
@@ -9,7 +10,22 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
+def sparse_bins_from_idxes(idxes_in_bin, pts, bin_size):
+    pass
+
+
+def bins_from_idxes(idxes_in_bin, per_bin_size, pts, bins_size):
+    per_bin_size = per_bin_size[:, 0]
+
+    nbins = len(idxes_in_bin)
+    bins = np.zeros((nbins, bins_size, pts.shape[1]), dtype=pts.dtype)
+    for bin_idx in range(nbins):
+        size = per_bin_size[bin_idx]
+        bins[bin_idx, :size] = pts[idxes_in_bin[bin_idx, :size]]
+    return bins
+
+
+def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk, sparsity):
     h = np.divide(region_dimension, bins_per_axis)
 
     bin_coords = np.floor_divide(pts, h).astype(int)
@@ -33,23 +49,48 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     biggest_bin = max(lengths)
     smallest_bin = min(lengths)
 
-    if bins_per_chunk == "auto":
-        bins_chunks = ("auto", -1)
-    else:
-        bins_chunks = (biggest_bin * bins_per_chunk, -1)
-
-    bins = da.from_array(
-        np.zeros((nbins, biggest_bin, pts.shape[1]), dtype=pts.dtype),
-        chunks=(bins_per_chunk, -1, -1),
-    )
+    padded_indexes_inside_bins = np.full((nbins, biggest_bin), -1, dtype=int)
+    per_bin_size = np.empty((nbins), dtype=int)
     for bin_idx in range(nbins):
-        ps = pts[indexes_inside_bins[bin_idx]]
-        bins[bin_idx, : len(ps)] = ps
+        bin_content = indexes_inside_bins[bin_idx]
+        lbc = len(bin_content)
 
-    return bins, indexes_inside_bins
+        per_bin_size[bin_idx] = lbc
+        padded_indexes_inside_bins[bin_idx, :lbc] = bin_content
+
+    if bins_per_chunk == "auto":
+        bins_chunks = ("auto", (biggest_bin,), (pts.shape[1],))
+    else:
+        bins_chunks = (bins_per_chunk, (biggest_bin,), (pts.shape[1],))
+
+    bins_filler = sparse_bins_from_idxes if sparsity else bins_from_idxes
+    pbins_filler = partial(bins_filler, pts=pts, bins_size=biggest_bin)
+
+    padded_indexes_inside_bins = da.from_array(
+        padded_indexes_inside_bins,
+        chunks=(bins_per_chunk, -1),
+    )
+
+    da_per_bin_size = da.from_array(
+        per_bin_size[:, None],
+        chunks=(bins_per_chunk, (1,)),
+    )
+
+    bins = da.map_blocks(
+        pbins_filler,
+        padded_indexes_inside_bins,
+        da_per_bin_size,
+        chunks=(*padded_indexes_inside_bins.chunks, pts.shape[1]),
+        meta=np.array((), dtype=pts.dtype),
+        name="bins",
+        new_axis=(2,),
+        dtype=pts.dtype,
+    )
+
+    return bins, per_bin_size, indexes_inside_bins
 
 
-def compute_bounds(bins):
+def compute_bounds(bins, sparsity):
     plus_minus = np.array([-1, 1], dtype=int)[:, None]
     nbins_per_chunk = max(bins.chunks[0])
     _, npts_per_bin, ndims = bins.shape
@@ -68,13 +109,18 @@ def compute_bounds(bins):
     # find maximum of positive and negative axes
     bounds = da.max(temp, axis=1)
 
+    def densify_and_switch_sign(x):
+        x = x.todense()
+        x[:, 0] *= -1
+        return x
+
     def switch_sign(x):
         x[:, 0] *= -1
         return x
 
     # we restore the original sign of the negative axis
     return da.map_blocks(
-        switch_sign,
+        densify_and_switch_sign if sparsity else switch_sign,
         bounds,
         dtype=bounds.dtype,
         meta=np.array((), dtype=bins.dtype),
@@ -108,6 +154,7 @@ def compute_mapped_distance_on_chunk(
     max_distance,
     func,
     exact_max_distance,
+    sparsity,
 ):
     # re-establish the proper dimensions for these matrices
     n_pts1_inside_chunk = n_pts1_inside_chunk[:, 0, 0]
@@ -130,6 +177,8 @@ def compute_mapped_distance_on_chunk(
 
     for bin_idx in non_trivial_bins:
         pts1_in_bin = pts1_in_chunk[bin_idx, : n_pts1_inside_chunk[bin_idx]]
+        if sparsity:
+            pts1_in_bin = pts1_in_bin.todense()
 
         inclusion_vector = inclusion_submatrix[bin_idx]
         padded_bin_pts2 = pts2[inclusion_vector]
@@ -162,6 +211,7 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     bins_per_chunk="auto",
+    sparse_bins=False,
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
 
@@ -180,18 +230,19 @@ def mapped_distance_matrix(
     if bins_per_axis.dtype != int:
         raise ValueError("The number of bins must be an integer number")
 
-    bins, indexes_inside_bins = fill_bins(
-        pts1, bins_per_axis, region_dimension, bins_per_chunk=bins_per_chunk
+    bins, n_pts1_inside_bins, indexes_inside_bins = fill_bins(
+        pts1,
+        bins_per_axis,
+        region_dimension,
+        bins_per_chunk=bins_per_chunk,
+        sparsity=sparse_bins,
     )
-    bins_bounds = compute_bounds(bins)
+    bins_bounds = compute_bounds(bins, sparse_bins)
     padded_bin_bounds = compute_padded_bounds(bins_bounds, max_distance)
 
     inclusion_matrix_da = match_points_and_bins(padded_bin_bounds, pts2)
     del bins_bounds
     del padded_bin_bounds
-
-    # we take one for each bin in each chunk
-    n_pts1_inside_bins = np.fromiter(map(len, indexes_inside_bins), dtype=int)
 
     if isinstance(bins.chunks[0], int):
         new_chunks_pts1 = tuple(
@@ -215,6 +266,7 @@ def mapped_distance_matrix(
         max_distance=max_distance,
         exact_max_distance=exact_max_distance,
         func=func,
+        sparsity=sparse_bins,
     )
 
     n_pts1_inside_bins_da = da.from_array(
