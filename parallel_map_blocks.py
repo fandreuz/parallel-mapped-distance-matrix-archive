@@ -11,7 +11,6 @@ def group_by(a):
 
 def bins_from_idxes(idxes_in_bin, per_bin_size, pts, bins_size):
     per_bin_size = per_bin_size[:, 0]
-
     nbins = len(idxes_in_bin)
     bins = np.zeros((nbins, bins_size, pts.shape[1]), dtype=pts.dtype)
     for bin_idx in range(nbins):
