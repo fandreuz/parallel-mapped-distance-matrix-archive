@@ -39,9 +39,7 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     indexes_inside_bins = group_by(aug_linearized_bin_coords)
 
     nbins = len(indexes_inside_bins)
-    lengths = tuple(map(len, indexes_inside_bins))
-    biggest_bin = max(lengths)
-    smallest_bin = min(lengths)
+    biggest_bin = max(map(len, indexes_inside_bins))
 
     padded_indexes_inside_bins = np.full((nbins, biggest_bin), -1, dtype=int)
     per_bin_size = np.empty((nbins), dtype=int)
