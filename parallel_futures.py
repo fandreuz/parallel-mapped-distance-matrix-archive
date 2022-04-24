@@ -8,14 +8,19 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def bins_from_idxes(idxes_in_bins, idx, pts):
+def bins_from_idxes(pre_bins, idxes_in_bins, idx):
     nbins = len(idxes_in_bins)
-    biggest_bin = max(map(len, idxes_in_bins))
+    bin_sizes = np.fromiter(map(len, idxes_in_bins), dtype=int)
+    bin_starts = np.concatenate([[0], np.cumsum(bin_sizes[:-1])])
+    biggest_bin = np.max(bin_sizes)
 
-    bins = np.zeros((nbins, biggest_bin, pts.shape[1]), dtype=pts.dtype)
+    bins = np.zeros(
+        (nbins, biggest_bin, pre_bins.shape[1]), dtype=pre_bins.dtype
+    )
     for bin_idx in range(nbins):
-        idxes = idxes_in_bins[bin_idx]
-        bins[bin_idx, : len(idxes)] = pts[idxes]
+        bin_size = bin_sizes[bin_idx]
+        start = bin_starts[bin_idx]
+        bins[bin_idx, :bin_size] = pre_bins[start : start + bin_size]
     return bins, idx
 
 
@@ -44,15 +49,15 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_future, client):
     n_subgroups += 1 if nbins % bins_per_future != 0 else 0
 
     subgroups = tuple(
-        indexes_inside_bins[
-            i * bins_per_future : (i + 1) * bins_per_future
-        ]
+        indexes_inside_bins[i * bins_per_future : (i + 1) * bins_per_future]
         for i in range(n_subgroups)
     )
+    flattened_subgroups = tuple(map(np.concatenate, subgroups))
 
-    bins = client.map(bins_from_idxes, subgroups, range(n_subgroups), pts=pts)
+    pre_bins = client.scatter([pts[fsg] for fsg in flattened_subgroups])
+    bins = client.map(bins_from_idxes, pre_bins, subgroups, range(n_subgroups))
 
-    return bins, subgroups
+    return bins, subgroups, flattened_subgroups
 
 
 def compute_bounds(bins):
@@ -205,7 +210,7 @@ def mapped_distance_matrix(
     if bins_per_axis.dtype != int:
         raise ValueError("The number of bins must be an integer number")
 
-    bins, subgroups = fill_bins(
+    bins, subgroups, flattened_subgroups = fill_bins(
         pts1,
         bins_per_axis,
         region_dimension,
@@ -213,12 +218,17 @@ def mapped_distance_matrix(
         client=client,
     )
 
+    pts2_fu = client.scatter(pts2, broadcast=True)
+
     bins_bounds = client.map(compute_bounds, bins)
+    # make this an iterable list
+    pts2_fu = np.repeat(pts2_fu, len(bins_bounds))
+
     padded_bin_bounds = client.map(
         compute_padded_bounds, bins_bounds, max_distance=max_distance
     )
     inclusion_matrix = client.map(
-        match_points_and_bins, padded_bin_bounds, points=pts2
+        match_points_and_bins, padded_bin_bounds, pts2_fu
     )
 
     mapped_distance = np.zeros((len(pts1), len(pts2)), dtype=pts1.dtype)
@@ -230,7 +240,7 @@ def mapped_distance_matrix(
             bins,
             subgroups,
             inclusion_matrix,
-            pts2=pts2,
+            pts2_fu,
             max_distance=max_distance,
             exact_max_distance=exact_max_distance,
             function=func,
@@ -239,14 +249,14 @@ def mapped_distance_matrix(
         for _, (submatrix, idx) in as_completed(
             mapped_distances_fu, with_results=True
         ):
-            mapped_distance[np.concatenate(subgroups[idx])] = submatrix
+            mapped_distance[flattened_subgroups[idx]] = submatrix
     else:
         results = client.map(
             shared_compute_mapped_distance_on_chunk,
             bins,
             subgroups,
             inclusion_matrix,
-            pts2=pts2,
+            pts2_fu,
             max_distance=max_distance,
             exact_max_distance=exact_max_distance,
             function=func,
