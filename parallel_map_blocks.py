@@ -1,8 +1,6 @@
 import numpy as np
 import dask.array as da
 
-from functools import partial
-
 
 def group_by(a):
     a = a[a[:, 0].argsort()]
@@ -55,8 +53,6 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     else:
         bins_chunks = (bins_per_chunk, (biggest_bin,), (pts.shape[1],))
 
-    pbins_filler = partial(bins_from_idxes, pts=pts, bins_size=biggest_bin)
-
     padded_indexes_inside_bins = da.from_array(
         padded_indexes_inside_bins,
         chunks=(bins_per_chunk, -1),
@@ -68,9 +64,11 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_chunk):
     )
 
     bins = da.map_blocks(
-        pbins_filler,
+        bins_from_idxes,
         padded_indexes_inside_bins,
         da_per_bin_size,
+        pts=pts,
+        bins_size=biggest_bin,
         chunks=(*padded_indexes_inside_bins.chunks, pts.shape[1]),
         meta=np.array((), dtype=pts.dtype),
         name="bins",
@@ -138,7 +136,7 @@ def compute_mapped_distance_on_chunk(
     inclusion_submatrix,
     pts2,
     max_distance,
-    func,
+    function,
     exact_max_distance,
 ):
     # re-establish the proper dimensions for these matrices
@@ -173,9 +171,9 @@ def compute_mapped_distance_on_chunk(
         if exact_max_distance:
             nearby = distances < max_distance
             mapped_distance = np.zeros_like(distances, dtype=pts1_in_bin.dtype)
-            mapped_distance[nearby] = func(distances[nearby])
+            mapped_distance[nearby] = function(distances[nearby])
         else:
-            mapped_distance = func(distances)
+            mapped_distance = function(distances)
 
         start = bin_start_indexes[bin_idx]
         submatrix[
@@ -241,14 +239,6 @@ def mapped_distance_matrix(
             )
         )
 
-    pcompute_mapped_distance_on_chunk = partial(
-        compute_mapped_distance_on_chunk,
-        pts2=pts2,
-        max_distance=max_distance,
-        exact_max_distance=exact_max_distance,
-        func=func,
-    )
-
     n_pts1_inside_bins_da = da.from_array(
         n_pts1_inside_bins[:, None, None],
         chunks=(bins.chunks[0], 1, 1),
@@ -272,10 +262,14 @@ def mapped_distance_matrix(
     )
 
     mapped_distance[bins_mapping] = da.map_blocks(
-        pcompute_mapped_distance_on_chunk,
+        compute_mapped_distance_on_chunk,
         bins,
         n_pts1_inside_bins_da,
         inclusion_matrix_da,
+        pts2=pts2,
+        max_distance=max_distance,
+        exact_max_distance=exact_max_distance,
+        function=func,
         # bins are aggregated (i.e. we lose the first dimension of bins)
         # and the spatial dimension is lost due to the fact that distance
         # is a scalar
