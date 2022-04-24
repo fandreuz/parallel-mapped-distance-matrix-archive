@@ -8,10 +8,6 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def single_bin_from_idxes(idxes_in_bin, idx, pts):
-    return pts[idxes_in_bin], idx
-
-
 def bins_from_idxes(idxes_in_bins, idx, pts):
     nbins = len(idxes_in_bins)
     biggest_bin = max(map(len, idxes_in_bins))
@@ -44,23 +40,17 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_future, client):
     indexes_inside_bins = list(map(np.array, indexes_inside_bins))
     nbins = len(indexes_inside_bins)
 
-    if bins_per_future > 1:
-        n_subgroups = nbins // bins_per_future
-        n_subgroups += 1 if nbins % bins_per_future != 0 else 0
-        subgroups = tuple(
-            indexes_inside_bins[
-                i * bins_per_future : (i + 1) * bins_per_future
-            ]
-            for i in range(n_subgroups)
-        )
-        bfi_func = bins_from_idxes
-    # one bin per future, may increase overhead for parallelism
-    else:
-        bfi_func = single_bin_from_idxes
-        subgroups = indexes_inside_bins
-        n_subgroups = nbins
+    n_subgroups = nbins // bins_per_future
+    n_subgroups += 1 if nbins % bins_per_future != 0 else 0
 
-    bins = client.map(bfi_func, subgroups, range(n_subgroups), pts=pts)
+    subgroups = tuple(
+        indexes_inside_bins[
+            i * bins_per_future : (i + 1) * bins_per_future
+        ]
+        for i in range(n_subgroups)
+    )
+
+    bins = client.map(bins_from_idxes, subgroups, range(n_subgroups), pts=pts)
 
     return bins, subgroups
 
@@ -192,10 +182,13 @@ def mapped_distance_matrix(
     bins_per_axis=None,
     should_vectorize=True,
     exact_max_distance=True,
-    bins_per_future=1,
+    bins_per_future=5,
     shared_memory=False,
 ):
     region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
+
+    if bins_per_future <= 1:
+        raise ValueError("At least two bins per Future.")
 
     # not using np.vectorize if the function is already vectorized allows us
     # to save some time
