@@ -43,8 +43,10 @@ def fill_bins(
         subgroups_inside_bins = list(
             map(
                 # here we apply the finer granularity (n. of pts per future)
-                lambda arr: np.split(arr, pts_per_future),
-                map(np.array, indexes_inside_bins),
+                lambda arr: np.array_split(
+                    arr, np.ceil(len(arr) / pts_per_future)
+                ),
+                indexes_inside_bins,
             )
         )
     else:
@@ -66,63 +68,23 @@ def generate_padded_bin(
     uniform_grid_cell_size,
     uniform_grid_cell_count,
     bins_size,
-    max_distance,
+    # in n. of cells
+    padding,
 ):
-    # number of uniform cells needed to cover max_distance
-    max_distance_in_cells = (max_distance // uniform_grid_cell_size).astype(
-        int
-    )
-    max_distance_in_cells[max_distance % uniform_grid_cell_size > 1.0e-12] += 1
-
-    n_axes = len(bins_size)
-    # generate the uniform grid
-    axes = tuple(
-        np.concatenate(
-            (
-                # left padding
-                np.linspace(
-                    bin_coords[i] * bins_size[i] * uniform_grid_cell_size[i]
-                    - max_distance,
-                    bin_coords[i] * bins_size[i] * uniform_grid_cell_size[i],
-                    max_distance_in_cells[i],
-                ),
-                # body
-                np.arange(
-                    bin_coords[i] * bins_size[i],
-                    (bin_coords[i] + 1) * bins_size[i],
-                )
-                * uniform_grid_cell_size[i],
-                # right padding
-                np.linspace(
-                    # the trailing +1 is due to the fact that we start one cell
-                    # after the end of the bin
-                    ((bin_coords[i] + 1) * bins_size[i] + 1)
-                    * uniform_grid_cell_size[i],
-                    ((bin_coords[i] + 1) * bins_size[i])
-                    * uniform_grid_cell_size[i]
-                    + max_distance
-                    + 1.0e-10,
-                    max_distance_in_cells[i],
-                ),
-            )
+    range_start = tuple(np.clip(bin_coords * bins_size - padding, 0, None))
+    range_end = tuple(
+        np.clip(
+            (bin_coords + 1) * bins_size + padding + 1,
+            None,
+            uniform_grid_cell_count,
         )
-        for i in range(n_axes)
     )
-    return np.reshape(np.meshgrid(*axes), (-1, n_axes))
-
-
-def generate_reference_padded_bin(
-    uniform_grid_cell_size, uniform_grid_cell_count, bins_size, max_distance
-):
-    n_axes = len(bins_size)
-    reference_bin_coords = np.zeros(len(bins_size), dtype=int)
-    return generate_padded_bin(
-        reference_bin_coords,
-        uniform_grid_cell_size,
-        uniform_grid_cell_count,
-        bins_size,
-        max_distance,
+    slices = tuple(
+        map(lambda start, end: slice(start, end), range_start, range_end)
     )
+    return np.swapaxes(
+        (np.mgrid[slices] * uniform_grid_cell_size[:, None, None]), 1, 2
+    ).T
 
 
 def compute_padded_bin_samples1_idxes(
@@ -141,7 +103,8 @@ def compute_padded_bin_samples1_idxes(
                 ),
                 min(
                     (bin_coords[i] + 1) * bins_size[i]
-                    + max_distance_in_cells[i],
+                    + max_distance_in_cells[i]
+                    + 1,
                     uniform_grid_cell_count[i],
                 ),
             ),
@@ -155,7 +118,6 @@ def compute_mapped_distance_on_subgroup(
     subgroups_and_coords,
     uniform_grid_cell_count,
     uniform_grid_cell_size,
-    reference_padded_bin,
     bins_size,
     max_distance,
     function,
@@ -164,13 +126,18 @@ def compute_mapped_distance_on_subgroup(
     subgroup, bin_coords, samples2_idxes = subgroups_and_coords
     # we translate the reference
 
-    max_distance_in_cells = (max_distance // uniform_grid_cell_size).astype(
-        int
+    max_distance_in_cells = np.ceil(
+        max_distance / uniform_grid_cell_size
+    ).astype(int)
+
+    samples1 = generate_padded_bin(
+        bin_coords=bin_coords,
+        uniform_grid_cell_size=uniform_grid_cell_size,
+        uniform_grid_cell_count=uniform_grid_cell_count,
+        bins_size=bins_size,
+        padding=max_distance_in_cells,
     )
-    samples1 = (
-        reference_padded_bin
-        + (bin_coords * bins_size * uniform_grid_cell_size)[None]
-    )
+    print(samples1)
     samples1_idxes = compute_padded_bin_samples1_idxes(
         bin_coords,
         bins_size,
@@ -182,7 +149,7 @@ def compute_mapped_distance_on_subgroup(
     )
 
     distances = np.linalg.norm(
-        samples1[:, None, :] - subgroup[None, ...],
+        samples1[:, :, None] - subgroup[None, None, ...],
         axis=-1,
     )
 
@@ -232,15 +199,6 @@ def mapped_distance_matrix(
         client=client,
     )
 
-    # the bin whose bin_coord is (0,0,...,0), padded with max_distance
-    reference_padded_bin = generate_reference_padded_bin(
-        uniform_grid_cell_size,
-        uniform_grid_cell_count,
-        bins_size,
-        max_distance,
-    )
-    print(reference_padded_bin.shape)
-
     mapped_distance = np.zeros(
         (*uniform_grid_cell_count, len(samples2)),
         dtype=samples2.dtype,
@@ -251,7 +209,6 @@ def mapped_distance_matrix(
         subgroups_coords_fu,
         uniform_grid_cell_count=uniform_grid_cell_count,
         uniform_grid_cell_size=uniform_grid_cell_size,
-        reference_padded_bin=reference_padded_bin,
         bins_size=bins_size,
         max_distance=max_distance,
         exact_max_distance=exact_max_distance,
@@ -263,4 +220,4 @@ def mapped_distance_matrix(
     ):
         mapped_distance[idxes_broadcastable_tuple] = submatrix
 
-    return mapped_distance
+    return mapped_distance.reshape(-1, len(samples2))
