@@ -24,12 +24,19 @@ def bins_from_idxes(pre_bins, idxes_in_bins, idx):
     return bins, idx
 
 
-def fill_bins(pts, bins_per_axis, region_dimension, bins_per_future, client):
+def fill_bins(
+    pts,
+    bins_per_axis,
+    region_dimension,
+    bins_per_future,
+    client,
+    sort_bins,
+):
     h = np.divide(region_dimension, bins_per_axis)
 
     bin_coords = np.floor_divide(pts, h).astype(int)
     # moves to the last bin of the axis any point which is outside the region
-    # defined by pts2.
+    # defined by samples2.
     np.clip(bin_coords, None, bins_per_axis - 1, out=bin_coords)
 
     shifted_nbins_per_axis = np.ones_like(bins_per_axis, dtype=int)
@@ -44,6 +51,9 @@ def fill_bins(pts, bins_per_axis, region_dimension, bins_per_future, client):
     indexes_inside_bins = group_by(aug_linearized_bin_coords)
     indexes_inside_bins = list(map(np.array, indexes_inside_bins))
     nbins = len(indexes_inside_bins)
+
+    if sort_bins:
+        indexes_inside_bins.sort(key=len)
 
     n_subgroups = nbins // bins_per_future
     n_subgroups += 1 if nbins % bins_per_future != 0 else 0
@@ -85,44 +95,47 @@ def match_points_and_bins(bins_bounds, points):
 
 
 def compute_mapped_distance_on_chunk(
-    pts1_in_future,
+    samples1_in_future,
     subgroups,
     inclusion_submatrix,
-    pts2,
+    samples2,
     max_distance,
     function,
     exact_max_distance,
 ):
     # this contains also a pointer to the subgroup idx, as well as the set of
-    # points in pts1 which belong to this future
-    pts1_in_future, idx = pts1_in_future
+    # points in samples1 which belong to this future
+    samples1_in_future, idx = samples1_in_future
 
     bins_sizes = np.fromiter(map(len, subgroups), dtype=int)
     bin_start_indexes = np.concatenate(
         ([0], np.cumsum(bins_sizes[:-1])), dtype=int
     )
-    non_trivial_bins = np.arange(len(pts1_in_future))[
+    non_trivial_bins = np.arange(len(samples1_in_future))[
         np.logical_and(bins_sizes > 0, np.any(inclusion_submatrix, axis=1))
     ]
 
     submatrix = np.zeros(
-        (np.sum(bins_sizes), len(pts2)), dtype=pts1_in_future.dtype
+        (np.sum(bins_sizes), len(samples2)), dtype=samples1_in_future.dtype
     )
 
     for bin_idx in non_trivial_bins:
         bin_size = bins_sizes[bin_idx]
-        pts1_in_bin = pts1_in_future[bin_idx, :bin_size]
+        samples1_in_bin = samples1_in_future[bin_idx, :bin_size]
 
         inclusion_vector = inclusion_submatrix[bin_idx]
-        padded_bin_pts2 = pts2[inclusion_vector]
+        padded_bin_samples2 = samples2[inclusion_vector]
 
         distances = np.linalg.norm(
-            pts1_in_bin[:, None, :] - padded_bin_pts2[None, ...], axis=-1
+            samples1_in_bin[:, None, :] - padded_bin_samples2[None, ...],
+            axis=-1,
         )
 
         if exact_max_distance:
             nearby = distances < max_distance
-            mapped_distance = np.zeros_like(distances, dtype=pts1_in_bin.dtype)
+            mapped_distance = np.zeros_like(
+                distances, dtype=samples1_in_bin.dtype
+            )
             mapped_distance[nearby] = function(distances[nearby])
         else:
             mapped_distance = function(distances)
@@ -136,51 +149,9 @@ def compute_mapped_distance_on_chunk(
     return submatrix, idx
 
 
-def shared_compute_mapped_distance_on_chunk(
-    pts1_in_future,
-    subgroups,
-    inclusion_submatrix,
-    pts2,
-    max_distance,
-    function,
-    exact_max_distance,
-    out=None,
-):
-    # this contains also a pointer to the subgroup idx, as well as the set of
-    # points in pts1 which belong to this future
-    pts1_in_future, idx = pts1_in_future
-
-    bins_sizes = np.fromiter(map(len, subgroups), dtype=int)
-    non_trivial_bins = np.arange(len(pts1_in_future))[
-        np.logical_and(bins_sizes > 0, np.any(inclusion_submatrix, axis=1))
-    ]
-
-    for bin_idx in non_trivial_bins:
-        bin_size = bins_sizes[bin_idx]
-        pts1_in_bin = pts1_in_future[bin_idx, :bin_size]
-
-        inclusion_vector_idxes = np.where(inclusion_submatrix[bin_idx])[0]
-        padded_bin_pts2 = pts2[inclusion_vector_idxes]
-
-        distances = np.linalg.norm(
-            pts1_in_bin[:, None, :] - padded_bin_pts2[None, ...], axis=-1
-        )
-
-        if exact_max_distance:
-            nearby = distances < max_distance
-            mapped_distance = np.zeros_like(distances, dtype=pts1_in_bin.dtype)
-            mapped_distance[nearby] = function(distances[nearby])
-        else:
-            mapped_distance = function(distances)
-
-        out[
-            subgroups[bin_idx][:, None], inclusion_vector_idxes[None]
-        ] = mapped_distance
-
-
 def mapped_distance_matrix(
-    pts1,
-    pts2,
+    samples1,
+    samples2,
     max_distance,
     func,
     client,
@@ -188,9 +159,9 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     bins_per_future=5,
-    shared_memory=False,
+    sort_bins=False
 ):
-    region_dimension = np.max(pts2, axis=0) - np.min(pts2, axis=0)
+    region_dimension = np.max(samples2, axis=0) - np.min(samples2, axis=0)
 
     if bins_per_future <= 1:
         raise ValueError("At least two bins per Future.")
@@ -211,57 +182,45 @@ def mapped_distance_matrix(
         raise ValueError("The number of bins must be an integer number")
 
     bins, subgroups, flattened_subgroups = fill_bins(
-        pts1,
+        samples1,
         bins_per_axis,
         region_dimension,
         bins_per_future=bins_per_future,
         client=client,
+        sort_bins=sort_bins
     )
 
-    pts2_fu = client.scatter(pts2, broadcast=True)
+    samples2_fu = client.scatter(samples2, broadcast=True)
 
     bins_bounds = client.map(compute_bounds, bins)
     # make this an iterable list
-    pts2_fu = np.repeat(pts2_fu, len(bins_bounds))
+    samples2_fu = np.repeat(samples2_fu, len(bins_bounds))
 
     padded_bin_bounds = client.map(
         compute_padded_bounds, bins_bounds, max_distance=max_distance
     )
     inclusion_matrix = client.map(
-        match_points_and_bins, padded_bin_bounds, pts2_fu
+        match_points_and_bins, padded_bin_bounds, samples2_fu
     )
 
-    mapped_distance = np.zeros((len(pts1), len(pts2)), dtype=pts1.dtype)
-    if not shared_memory:
-        # all the writes to the global distance matrix occur in the main
-        # thread
-        mapped_distances_fu = client.map(
-            compute_mapped_distance_on_chunk,
-            bins,
-            subgroups,
-            inclusion_matrix,
-            pts2_fu,
-            max_distance=max_distance,
-            exact_max_distance=exact_max_distance,
-            function=func,
-        )
+    mapped_distance = np.zeros(
+        (len(samples1), len(samples2)), dtype=samples1.dtype
+    )
+    # all the writes to the global distance matrix occur in the main thread
+    mapped_distances_fu = client.map(
+        compute_mapped_distance_on_chunk,
+        bins,
+        subgroups,
+        inclusion_matrix,
+        samples2_fu,
+        max_distance=max_distance,
+        exact_max_distance=exact_max_distance,
+        function=func,
+    )
 
-        for _, (submatrix, idx) in as_completed(
-            mapped_distances_fu, with_results=True
-        ):
-            mapped_distance[flattened_subgroups[idx]] = submatrix
-    else:
-        results = client.map(
-            shared_compute_mapped_distance_on_chunk,
-            bins,
-            subgroups,
-            inclusion_matrix,
-            pts2_fu,
-            max_distance=max_distance,
-            exact_max_distance=exact_max_distance,
-            function=func,
-            out=mapped_distance,
-        )
-        client.gather(results)
+    for _, (submatrix, idx) in as_completed(
+        mapped_distances_fu, with_results=True
+    ):
+        mapped_distance[flattened_subgroups[idx]] = submatrix
 
     return mapped_distance
