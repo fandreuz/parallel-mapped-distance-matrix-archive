@@ -82,9 +82,7 @@ def generate_padded_bin(
     slices = tuple(
         map(lambda start, end: slice(start, end), range_start, range_end)
     )
-    return np.swapaxes(
-        (np.mgrid[slices] * uniform_grid_cell_size[:, None, None]), 1, 2
-    ).T
+    return np.mgrid[slices] * uniform_grid_cell_size[:, None, None]
 
 
 def compute_padded_bin_samples1_idxes(
@@ -137,7 +135,7 @@ def compute_mapped_distance_on_subgroup(
         bins_size=bins_size,
         padding=max_distance_in_cells,
     )
-    print(samples1)
+
     samples1_idxes = compute_padded_bin_samples1_idxes(
         bin_coords,
         bins_size,
@@ -149,8 +147,8 @@ def compute_mapped_distance_on_subgroup(
     )
 
     distances = np.linalg.norm(
-        samples1[:, :, None] - subgroup[None, None, ...],
-        axis=-1,
+        samples1[..., None] - subgroup.T[:,None,None],
+        axis=0,
     )
 
     if exact_max_distance:
