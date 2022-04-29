@@ -8,6 +8,11 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
+def bin_content_tuple(bin_content, pts, bin_coords):
+    bin_content = bin_content[0]
+    return pts[bin_content], bin_coords[bin_content[0]], bin_content
+
+
 def fill_bins(
     uniform_grid_cell_size,
     uniform_grid_cell_count,
@@ -52,12 +57,17 @@ def fill_bins(
     else:
         subgroups_inside_bins = [list(map(np.array, indexes_inside_bins))]
 
-    subgroups_coords_fu = client.scatter(
-        [
-            (pts[subgroup], bin_coords[subgroup[0]], subgroup)
+    bin_coords_fu = client.scatter(bin_coords, broadcast=True)
+    pts_fu = client.scatter(pts, broadcast=True)
+    subgroups_coords_fu = client.map(
+        bin_content_tuple,
+        tuple(
+            bin_content
             for bin_content in subgroups_inside_bins
             for subgroup in bin_content
-        ]
+        ),
+        pts=pts_fu,
+        bin_coords=bin_coords_fu,
     )
 
     return subgroups_coords_fu
@@ -147,7 +157,7 @@ def compute_mapped_distance_on_subgroup(
     )
 
     distances = np.linalg.norm(
-        samples1[..., None] - subgroup.T[:,None,None],
+        samples1[..., None] - subgroup.T[:, None, None],
         axis=0,
     )
 
