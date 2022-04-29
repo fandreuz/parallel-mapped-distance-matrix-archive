@@ -1,5 +1,6 @@
 import numpy as np
 from benchmark import do_benchmark
+from dask.distributed import Client
 
 t = np.linspace(0, 2, 500)
 rng = np.random.default_rng(seed=2)
@@ -10,4 +11,4 @@ samples2 = np.stack(
 )
 
 if __name__ == "__main__":
-    do_benchmark(samples1, samples2)
+    do_benchmark(samples1, samples2, client=Client(processes=False))
