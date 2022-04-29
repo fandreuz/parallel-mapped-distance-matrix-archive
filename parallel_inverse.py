@@ -207,10 +207,6 @@ def mapped_distance_matrix(
         client=client,
     )
 
-    mapped_distance = np.zeros(
-        (*uniform_grid_cell_count, len(samples2)),
-        dtype=samples2.dtype,
-    )
     # all the writes to the global distance matrix occur in the main thread
     mapped_distances_fu = client.map(
         compute_mapped_distance_on_subgroup,
@@ -223,6 +219,10 @@ def mapped_distance_matrix(
         function=func,
     )
 
+    mapped_distance = np.zeros(
+        (*uniform_grid_cell_count, len(samples2)),
+        dtype=samples2.dtype,
+    )
     for _, (submatrix, idxes_broadcastable_tuple) in as_completed(
         mapped_distances_fu, with_results=True
     ):
