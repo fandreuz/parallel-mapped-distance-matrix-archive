@@ -102,21 +102,14 @@ def compute_padded_bin_samples1_idxes(
     # the +1 is for samples2
     axes = np.fromiter(range(n_axes + 1), dtype=int)
     return tuple(
-        # we add a shallow dimension to all the dimension except for the
-        # current one
-        np.expand_dims(
-            np.arange(
-                max(
-                    0, bin_coords[i] * bins_size[i] - max_distance_in_cells[i]
-                ),
-                min(
-                    (bin_coords[i] + 1) * bins_size[i]
-                    + max_distance_in_cells[i]
-                    + 1,
-                    uniform_grid_cell_count[i],
-                ),
+        slice(
+            max(0, bin_coords[i] * bins_size[i] - max_distance_in_cells[i]),
+            min(
+                (bin_coords[i] + 1) * bins_size[i]
+                + max_distance_in_cells[i]
+                + 1,
+                uniform_grid_cell_count[i],
             ),
-            axis=tuple(np.delete(axes, i)),
         )
         for i in range(n_axes)
     )
@@ -138,6 +131,8 @@ def compute_mapped_distance_on_subgroup(
         max_distance / uniform_grid_cell_size
     ).astype(int)
 
+    uniform_grid_cell_count = np.asarray(uniform_grid_cell_count)
+
     samples1 = generate_padded_bin(
         bin_coords=bin_coords,
         uniform_grid_cell_size=uniform_grid_cell_size,
@@ -151,9 +146,6 @@ def compute_mapped_distance_on_subgroup(
         bins_size,
         uniform_grid_cell_count,
         max_distance_in_cells,
-    )
-    samples2_idxes = np.expand_dims(
-        samples2_idxes, axis=tuple(range(len(bins_size)))
     )
 
     distances = np.linalg.norm(
