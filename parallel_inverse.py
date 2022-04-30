@@ -73,46 +73,24 @@ def fill_bins(
     return subgroups_coords_fu
 
 
-def generate_padded_bin(
-    bin_coords,
-    uniform_grid_cell_size,
-    uniform_grid_cell_count,
-    bins_size,
-    # in n. of cells
-    padding,
-):
-    range_start = tuple(np.clip(bin_coords * bins_size - padding, 0, None))
-    range_end = tuple(
-        np.clip(
-            (bin_coords + 1) * bins_size + padding + 1,
-            None,
-            uniform_grid_cell_count,
-        )
-    )
-    slices = tuple(
-        map(lambda start, end: slice(start, end), range_start, range_end)
-    )
-    return np.mgrid[slices] * uniform_grid_cell_size[:, None, None]
-
-
 def compute_padded_bin_samples1_idxes(
-    bin_coords, bins_size, uniform_grid_cell_count, max_distance_in_cells
+    bin_coords, bins_size, uniform_grid_cell_count, max_distance_in_cells, clip
 ):
-    n_axes = len(bin_coords)
-    # the +1 is for samples2
-    axes = np.fromiter(range(n_axes + 1), dtype=int)
-    return tuple(
-        slice(
-            max(0, bin_coords[i] * bins_size[i] - max_distance_in_cells[i]),
-            min(
-                (bin_coords[i] + 1) * bins_size[i]
-                + max_distance_in_cells[i]
-                + 1,
-                uniform_grid_cell_count[i],
-            ),
-        )
-        for i in range(n_axes)
+    lower_bound = bin_coords * bins_size - max_distance_in_cells
+    upper_bound = (bin_coords + 1) * bins_size + max_distance_in_cells + 1
+
+    if clip:
+        lower_bound = np.clip(lower_bound, 0, None)
+        upper_bound = np.clip(upper_bound, None, uniform_grid_cell_count)
+
+    sliceify = lambda a: slice(a[0], a[1])
+    return np.apply_along_axis(
+        sliceify, 0, np.stack((lower_bound, upper_bound))
     )
+
+
+def generate_padded_bin(slices, uniform_grid_cell_size):
+    return np.mgrid[slices] * uniform_grid_cell_size[:, None, None]
 
 
 def compute_mapped_distance_on_subgroup(
@@ -133,19 +111,17 @@ def compute_mapped_distance_on_subgroup(
 
     uniform_grid_cell_count = np.asarray(uniform_grid_cell_count)
 
-    samples1 = generate_padded_bin(
-        bin_coords=bin_coords,
-        uniform_grid_cell_size=uniform_grid_cell_size,
-        uniform_grid_cell_count=uniform_grid_cell_count,
-        bins_size=bins_size,
-        padding=max_distance_in_cells,
-    )
-
     samples1_idxes = compute_padded_bin_samples1_idxes(
         bin_coords,
         bins_size,
         uniform_grid_cell_count,
         max_distance_in_cells,
+        clip=True,
+    )
+
+    samples1 = generate_padded_bin(
+        slices=samples1_idxes,
+        uniform_grid_cell_size=uniform_grid_cell_size,
     )
 
     distances = np.linalg.norm(
