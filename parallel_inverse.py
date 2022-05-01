@@ -73,24 +73,47 @@ def fill_bins(
     return subgroups_coords_fu
 
 
-def compute_padded_bin_samples1_idxes(
-    bin_coords, bins_size, uniform_grid_cell_count, max_distance_in_cells, clip
+def compute_padded_bin_samples1_ranges(
+    clip,
+    uniform_grid_cell_count,
+    bin_coords=None,
+    bins_size=None,
+    max_distance_in_cells=None,
+    lower_bound=None,
+    upper_bound=None,
 ):
-    lower_bound = bin_coords * bins_size - max_distance_in_cells
-    upper_bound = (bin_coords + 1) * bins_size + max_distance_in_cells + 1
+    # if we created lower_bound and upper_bound we can modify them in-place,
+    # otherwise we need to create new arrays
+    if lower_bound is None:
+        lower_bound = bin_coords * bins_size - max_distance_in_cells
+        upper_bound = (bin_coords + 1) * bins_size + max_distance_in_cells + 1
 
-    if clip:
+        lower_bound = lower_bound.astype(int)
+        upper_bound = upper_bound.astype(int)
+
+        if clip:
+            np.clip(lower_bound, 0, None, out=lower_bound)
+            np.clip(
+                upper_bound, None, uniform_grid_cell_count, out=upper_bound
+            )
+    elif clip:
         lower_bound = np.clip(lower_bound, 0, None)
         upper_bound = np.clip(upper_bound, None, uniform_grid_cell_count)
 
-    sliceify = lambda a: slice(a[0], a[1])
-    return np.apply_along_axis(
-        sliceify, 0, np.stack((lower_bound, upper_bound))
+    return lower_bound, upper_bound
+
+
+def generate_padded_bin(slices, uniform_grid_cell_size, translation=0):
+    translation = np.expand_dims(
+        np.atleast_1d(translation), axis=tuple(range(1, len(slices) + 1))
     )
+    uniform_grid = np.mgrid[slices] + translation
+    return uniform_grid * uniform_grid_cell_size[:, None, None]
 
 
-def generate_padded_bin(slices, uniform_grid_cell_size):
-    return np.mgrid[slices] * uniform_grid_cell_size[:, None, None]
+def sliceify(lower_bound, upper_bound):
+    f = lambda arr: slice(arr[0], arr[1])
+    return np.apply_along_axis(f, 0, np.stack((lower_bound, upper_bound)))
 
 
 def compute_mapped_distance_on_subgroup(
@@ -101,9 +124,9 @@ def compute_mapped_distance_on_subgroup(
     max_distance,
     function,
     exact_max_distance,
+    reference_bin,
 ):
     subgroup, bin_coords, samples2_idxes = subgroups_and_coords
-    # we translate the reference
 
     max_distance_in_cells = np.ceil(
         max_distance / uniform_grid_cell_size
@@ -111,18 +134,54 @@ def compute_mapped_distance_on_subgroup(
 
     uniform_grid_cell_count = np.asarray(uniform_grid_cell_count)
 
-    samples1_idxes = compute_padded_bin_samples1_idxes(
-        bin_coords,
-        bins_size,
-        uniform_grid_cell_count,
-        max_distance_in_cells,
-        clip=True,
-    )
+    if reference_bin is None:
+        lower_bound, upper_bound = compute_padded_bin_samples1_ranges(
+            clip=True,
+            bin_coords=bin_coords,
+            bins_size=bins_size,
+            uniform_grid_cell_count=uniform_grid_cell_count,
+            max_distance_in_cells=max_distance_in_cells,
+        )
 
-    samples1 = generate_padded_bin(
-        slices=samples1_idxes,
-        uniform_grid_cell_size=uniform_grid_cell_size,
-    )
+        samples1_slices = sliceify(lower_bound, upper_bound)
+        samples1 = generate_padded_bin(
+            slices=samples1_slices,
+            uniform_grid_cell_size=uniform_grid_cell_size,
+        )
+    else:
+        # uc = unclipped
+        uc_lower_bound, uc_upper_bound = compute_padded_bin_samples1_ranges(
+            clip=False,
+            bin_coords=bin_coords,
+            bins_size=bins_size,
+            uniform_grid_cell_count=uniform_grid_cell_count,
+            max_distance_in_cells=max_distance_in_cells,
+        )
+        c_lower_bound, c_upper_bound = compute_padded_bin_samples1_ranges(
+            clip=True,
+            uniform_grid_cell_count=uniform_grid_cell_count,
+            lower_bound=uc_lower_bound,
+            upper_bound=uc_upper_bound,
+        )
+        samples1_slices = sliceify(c_lower_bound, c_upper_bound)
+
+        ref_lower_bound = c_lower_bound - uc_lower_bound
+        ref_upper_bound = c_upper_bound - c_lower_bound + ref_lower_bound
+        # add fictious lower/upper_bound for first dimension
+        ref_lower_bound = np.concatenate(([0], ref_lower_bound))
+        ref_upper_bound = np.concatenate(
+            ([len(reference_bin)], ref_upper_bound)
+        )
+
+        reference_bin_slices = tuple(
+            sliceify(ref_lower_bound, ref_upper_bound)
+        )
+        translation_from_ref = bin_coords * bins_size * uniform_grid_cell_size
+        translation_from_ref = np.expand_dims(
+            translation_from_ref,
+            axis=tuple(range(1, len(reference_bin_slices))),
+        )
+        samples1 = reference_bin[reference_bin_slices] + translation_from_ref
 
     distances = np.linalg.norm(
         samples1[..., None] - subgroup.T[:, None, None],
@@ -136,7 +195,7 @@ def compute_mapped_distance_on_subgroup(
     else:
         mapped_distance = function(distances)
 
-    return mapped_distance, (*samples1_idxes, samples2_idxes)
+    return mapped_distance, (*samples1_slices, samples2_idxes)
 
 
 def mapped_distance_matrix(
@@ -153,6 +212,7 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     pts_per_future=5,
+    use_reference_bin=True,
 ):
     # not using np.vectorize if the function is already vectorized allows us
     # to save some time
@@ -175,6 +235,31 @@ def mapped_distance_matrix(
         client=client,
     )
 
+    reference_bin = None
+    if use_reference_bin:
+        max_distance_in_cells = np.ceil(
+            max_distance / uniform_grid_cell_size
+        ).astype(int)
+
+        lower_bound, upper_bound = compute_padded_bin_samples1_ranges(
+            clip=False,
+            uniform_grid_cell_count=uniform_grid_cell_count,
+            bin_coords=np.zeros_like(bins_size),
+            bins_size=bins_size,
+            max_distance_in_cells=max_distance_in_cells,
+        )
+
+        # lower bound could be negative
+        translation = np.where(lower_bound < 0, np.abs(lower_bound), 0)
+        reference_slices = sliceify(
+            lower_bound + translation, upper_bound + translation
+        )
+        reference_bin = generate_padded_bin(
+            slices=reference_slices,
+            uniform_grid_cell_size=uniform_grid_cell_size,
+            translation=-translation,
+        )
+
     # all the writes to the global distance matrix occur in the main thread
     mapped_distances_fu = client.map(
         compute_mapped_distance_on_subgroup,
@@ -185,6 +270,7 @@ def mapped_distance_matrix(
         max_distance=max_distance,
         exact_max_distance=exact_max_distance,
         function=func,
+        reference_bin=reference_bin,
     )
 
     mapped_distance = np.zeros(
