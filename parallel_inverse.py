@@ -9,7 +9,6 @@ def group_by(a):
 
 
 def bin_content_tuple(bin_content, pts, bin_coords):
-    bin_content = bin_content[0]
     return pts[bin_content], bin_coords[bin_content[0]], bin_content
 
 
@@ -62,7 +61,7 @@ def fill_bins(
     subgroups_coords_fu = client.map(
         bin_content_tuple,
         tuple(
-            bin_content
+            subgroup
             for bin_content in subgroups_inside_bins
             for subgroup in bin_content
         ),
@@ -86,10 +85,8 @@ def compute_padded_bin_samples1_ranges(
     # otherwise we need to create new arrays
     if lower_bound is None:
         lower_bound = bin_coords * bins_size - max_distance_in_cells
+        # TODO +1?
         upper_bound = (bin_coords + 1) * bins_size + max_distance_in_cells + 1
-
-        lower_bound = lower_bound.astype(int)
-        upper_bound = upper_bound.astype(int)
 
         if clip:
             np.clip(lower_bound, 0, None, out=lower_bound)
@@ -127,10 +124,9 @@ def compute_mapped_distance_on_subgroup(
     reference_bin,
 ):
     subgroup, bin_coords, samples2_idxes = subgroups_and_coords
-
-    max_distance_in_cells = np.ceil(
-        max_distance / uniform_grid_cell_size
-    ).astype(int)
+    max_distance_in_cells = compute_max_distance_in_cells(
+        max_distance, uniform_grid_cell_size
+    )
 
     uniform_grid_cell_count = np.asarray(uniform_grid_cell_count)
 
@@ -183,6 +179,8 @@ def compute_mapped_distance_on_subgroup(
         )
         samples1 = reference_bin[reference_bin_slices] + translation_from_ref
 
+    np.save("samples1_{}.npy".format(".".join(map(str, bin_coords))), samples1)
+
     distances = np.linalg.norm(
         samples1[..., None] - subgroup.T[:, None, None],
         axis=0,
@@ -196,6 +194,10 @@ def compute_mapped_distance_on_subgroup(
         mapped_distance = function(distances)
 
     return mapped_distance, (*samples1_slices, samples2_idxes)
+
+
+def compute_max_distance_in_cells(max_distance, cells_size):
+    return np.ceil(max_distance / cells_size).astype(int)
 
 
 def mapped_distance_matrix(
@@ -237,9 +239,9 @@ def mapped_distance_matrix(
 
     reference_bin = None
     if use_reference_bin:
-        max_distance_in_cells = np.ceil(
-            max_distance / uniform_grid_cell_size
-        ).astype(int)
+        max_distance_in_cells = compute_max_distance_in_cells(
+            max_distance, uniform_grid_cell_size
+        )
 
         lower_bound, upper_bound = compute_padded_bin_samples1_ranges(
             clip=False,
