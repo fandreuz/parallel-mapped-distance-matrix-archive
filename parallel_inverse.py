@@ -179,8 +179,6 @@ def compute_mapped_distance_on_subgroup(
         )
         samples1 = reference_bin[reference_bin_slices] + translation_from_ref
 
-    np.save("samples1_{}.npy".format(".".join(map(str, bin_coords))), samples1)
-
     distances = np.linalg.norm(
         samples1[..., None] - subgroup.T[:, None, None],
         axis=0,
