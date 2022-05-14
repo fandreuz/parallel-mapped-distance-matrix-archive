@@ -212,7 +212,7 @@ def mapped_distance_matrix(
     should_vectorize=True,
     exact_max_distance=True,
     pts_per_future=5,
-    use_reference_bin=True,
+    use_reference_bin=False,
 ):
     # not using np.vectorize if the function is already vectorized allows us
     # to save some time
