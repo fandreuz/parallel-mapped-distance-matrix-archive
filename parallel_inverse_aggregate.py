@@ -6,43 +6,114 @@ from dask.distributed import as_completed
 # the number of dimensions is greater than 3 is not efficient, and thus is used
 # only when writing the expression by hand becomes too tedious
 def extract_slices(arr, lower_bounds, upper_bounds):
-    if len(lower_bounds) == 1:
-        return arr[lower_bounds[0] : upper_bounds[0]]
-    elif len(lower_bounds) == 2:
-        return arr[
-            lower_bounds[0] : upper_bounds[0],
-            lower_bounds[1] : upper_bounds[1],
-        ]
-    elif len(lower_bounds) == 3:
-        return arr[
-            lower_bounds[0] : upper_bounds[0],
-            lower_bounds[1] : upper_bounds[1],
-            lower_bounds[2] : upper_bounds[2],
-        ]
-    else:
-        return arr[
-            tuple(slice(l, u) for l, u in zip(lower_bounds, upper_bounds))
-        ]
+    # 1D
+    # return arr[lower_bounds[0] : upper_bounds[0]]
+
+    # 2D
+    return arr[
+        lower_bounds[0] : upper_bounds[0],
+        lower_bounds[1] : upper_bounds[1],
+    ]
+
+    # 3D
+    # return arr[
+    #    lower_bounds[0] : upper_bounds[0],
+    #    lower_bounds[1] : upper_bounds[1],
+    #    lower_bounds[2] : upper_bounds[2],
+    # ]
+
+    # ND
+    # return arr[
+    #    tuple(slice(l, u) for l, u in zip(lower_bounds, upper_bounds))
+    # ]
 
 
 def sum_slices(arr, val, lower_bounds, upper_bounds):
-    if len(lower_bounds) == 1:
-        arr[lower_bounds[0] : upper_bounds[0]] += val
-    elif len(lower_bounds) == 2:
-        arr[
-            lower_bounds[0] : upper_bounds[0],
-            lower_bounds[1] : upper_bounds[1],
-        ] += val
-    elif len(lower_bounds) == 3:
-        arr[
-            lower_bounds[0] : upper_bounds[0],
-            lower_bounds[1] : upper_bounds[1],
-            lower_bounds[2] : upper_bounds[2],
-        ] += val
-    else:
-        arr[
-            tuple(slice(l, u) for l, u in zip(lower_bounds, upper_bounds))
-        ] += val
+    # 1D
+    # arr[lower_bounds[0] : upper_bounds[0]] += val
+
+    # 2D
+    arr[
+        lower_bounds[0] : upper_bounds[0],
+        lower_bounds[1] : upper_bounds[1],
+    ] += val
+
+    # 3D
+    # arr[
+    #    lower_bounds[0] : upper_bounds[0],
+    #    lower_bounds[1] : upper_bounds[1],
+    #    lower_bounds[2] : upper_bounds[2],
+    # ] += val
+
+    # ND
+    # arr[
+    #    tuple(slice(l, u) for l, u in zip(lower_bounds, upper_bounds))
+    # ] += val
+
+
+def periodic_inner_sum(arr, core_lower_bound, core_upper_bound):
+    right_size = np.array(arr.shape) - core_upper_bound
+
+    # 1D
+    # arr[core_lower_bound[0] : 2 * core_lower_bound[0]] += arr[
+    #     : core_lower_bound[0]
+    # ]
+    # arr[core_upper_bound[0] - right_size[0] : core_upper_bound[0]] += arr[
+    #     core_upper_bound[0] :
+    # ]
+    # return arr[core_lower_bound[0] : core_upper_bound[0]]
+
+    # 2D
+    arr[
+        core_lower_bound[0] : 2 * core_lower_bound[0],
+        core_lower_bound[1] : 2 * core_lower_bound[1],
+    ] += arr[: core_lower_bound[0], : core_lower_bound[1]]
+    arr[
+        core_upper_bound[0] - right_size[0] : core_upper_bound[0],
+        core_upper_bound[1] - right_size[1] : core_upper_bound[1],
+    ] += arr[core_upper_bound[0] :, core_upper_bound[1] :]
+    return arr[
+        core_lower_bound[0] : core_upper_bound[0],
+        core_lower_bound[1] : core_upper_bound[1],
+    ]
+
+    # 3D
+    # arr[
+    #     core_lower_bound[0] : 2 * core_lower_bound[0],
+    #     core_lower_bound[1] : 2 * core_lower_bound[1],
+    #     core_lower_bound[2] : 2 * core_lower_bound[2],
+    # ] += arr[
+    #     : core_lower_bound[0], : core_lower_bound[1], : core_lower_bound[2]
+    # ]
+    # arr[
+    #     core_upper_bound[0] - right_size[0] : core_upper_bound[0],
+    #     core_upper_bound[1] - right_size[1] : core_upper_bound[1],
+    #     core_upper_bound[2] - right_size[2] : core_upper_bound[2],
+    # ] += arr[
+    #     core_upper_bound[0] :, core_upper_bound[1] :, core_upper_bound[2] :
+    # ]
+    # return arr[
+    #     core_lower_bound[0] : core_upper_bound[0],
+    #     core_lower_bound[1] : core_upper_bound[1],
+    #     core_lower_bound[2] : core_upper_bound[2],
+    # ]
+
+    # ND
+    # arr[
+    #     tuple(slice(bottom, 2 * bottom) for bottom in core_lower_bound)
+    # ] += arr[tuple(slice(0, bottom) for bottom in core_lower_bound)]
+    # arr[
+    #     tuple(
+    #         slice(top - rs, top)
+    #         for top, rs in zip(core_upper_bound, right_size)
+    #     )
+    # ] += arr[tuple(slice(top, None) for top in core_upper_bound)]
+    # return arr[
+    #     tuple(
+    #         slice(bottom, top)
+    #         for bottom, top in zip(core_lower_bound, core_upper_bound)
+    #     )
+    # ]
 
 
 def group_by(a):
@@ -468,31 +539,8 @@ def mapped_distance_matrix(
             bin_bounds[1] + 2 * max_distance_in_cells,
         )
 
-    # forward periodicity
-    mapped_distance[
-        tuple(
-            slice(bottom, top)
-            for bottom, top in zip(
-                max_distance_in_cells, 2 * max_distance_in_cells
-            )
-        )
-    ] += mapped_distance[
-        tuple(slice(bottom, None) for bottom in -max_distance_in_cells)
-    ]
-
-    # backward periodicity
-    mapped_distance[
-        tuple(
-            slice(bottom, top)
-            for bottom, top in zip(
-                -2 * max_distance_in_cells, -max_distance_in_cells
-            )
-        )
-    ] += mapped_distance[tuple(slice(0, top) for top in max_distance_in_cells)]
-
-    return mapped_distance[
-        tuple(
-            slice(bottom, bottom + gs)
-            for bottom, gs in zip(max_distance_in_cells, uniform_grid_size)
-        )
-    ]
+    return periodic_inner_sum(
+        mapped_distance,
+        max_distance_in_cells,
+        uniform_grid_size + max_distance_in_cells,
+    )
