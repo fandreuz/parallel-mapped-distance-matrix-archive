@@ -2,118 +2,11 @@ import numpy as np
 
 from dask.distributed import as_completed
 
-# convenient way to extract slices from a NumPy array. the method used when
-# the number of dimensions is greater than 3 is not efficient, and thus is used
-# only when writing the expression by hand becomes too tedious
-def extract_slices(arr, lower_bounds, upper_bounds):
-    # 1D
-    # return arr[lower_bounds[0] : upper_bounds[0]]
-
-    # 2D
-    return arr[
-        lower_bounds[0] : upper_bounds[0],
-        lower_bounds[1] : upper_bounds[1],
-    ]
-
-    # 3D
-    # return arr[
-    #    lower_bounds[0] : upper_bounds[0],
-    #    lower_bounds[1] : upper_bounds[1],
-    #    lower_bounds[2] : upper_bounds[2],
-    # ]
-
-    # ND
-    # return arr[
-    #    tuple(slice(l, u) for l, u in zip(lower_bounds, upper_bounds))
-    # ]
-
-
-def sum_slices(arr, val, lower_bounds, upper_bounds):
-    # 1D
-    # arr[lower_bounds[0] : upper_bounds[0]] += val
-
-    # 2D
-    arr[
-        lower_bounds[0] : upper_bounds[0],
-        lower_bounds[1] : upper_bounds[1],
-    ] += val
-
-    # 3D
-    # arr[
-    #    lower_bounds[0] : upper_bounds[0],
-    #    lower_bounds[1] : upper_bounds[1],
-    #    lower_bounds[2] : upper_bounds[2],
-    # ] += val
-
-    # ND
-    # arr[
-    #    tuple(slice(l, u) for l, u in zip(lower_bounds, upper_bounds))
-    # ] += val
-
-
-def periodic_inner_sum(arr, core_lower_bound, core_upper_bound):
-    right_size = np.array(arr.shape) - core_upper_bound
-
-    # 1D
-    # arr[core_lower_bound[0] : 2 * core_lower_bound[0]] += arr[
-    #     : core_lower_bound[0]
-    # ]
-    # arr[core_upper_bound[0] - right_size[0] : core_upper_bound[0]] += arr[
-    #     core_upper_bound[0] :
-    # ]
-    # return arr[core_lower_bound[0] : core_upper_bound[0]]
-
-    # 2D
-    arr[
-        core_lower_bound[0] : 2 * core_lower_bound[0],
-        core_lower_bound[1] : 2 * core_lower_bound[1],
-    ] += arr[: core_lower_bound[0], : core_lower_bound[1]]
-    arr[
-        core_upper_bound[0] - right_size[0] : core_upper_bound[0],
-        core_upper_bound[1] - right_size[1] : core_upper_bound[1],
-    ] += arr[core_upper_bound[0] :, core_upper_bound[1] :]
-    return arr[
-        core_lower_bound[0] : core_upper_bound[0],
-        core_lower_bound[1] : core_upper_bound[1],
-    ]
-
-    # 3D
-    # arr[
-    #     core_lower_bound[0] : 2 * core_lower_bound[0],
-    #     core_lower_bound[1] : 2 * core_lower_bound[1],
-    #     core_lower_bound[2] : 2 * core_lower_bound[2],
-    # ] += arr[
-    #     : core_lower_bound[0], : core_lower_bound[1], : core_lower_bound[2]
-    # ]
-    # arr[
-    #     core_upper_bound[0] - right_size[0] : core_upper_bound[0],
-    #     core_upper_bound[1] - right_size[1] : core_upper_bound[1],
-    #     core_upper_bound[2] - right_size[2] : core_upper_bound[2],
-    # ] += arr[
-    #     core_upper_bound[0] :, core_upper_bound[1] :, core_upper_bound[2] :
-    # ]
-    # return arr[
-    #     core_lower_bound[0] : core_upper_bound[0],
-    #     core_lower_bound[1] : core_upper_bound[1],
-    #     core_lower_bound[2] : core_upper_bound[2],
-    # ]
-
-    # ND
-    # arr[
-    #     tuple(slice(bottom, 2 * bottom) for bottom in core_lower_bound)
-    # ] += arr[tuple(slice(0, bottom) for bottom in core_lower_bound)]
-    # arr[
-    #     tuple(
-    #         slice(top - rs, top)
-    #         for top, rs in zip(core_upper_bound, right_size)
-    #     )
-    # ] += arr[tuple(slice(top, None) for top in core_upper_bound)]
-    # return arr[
-    #     tuple(
-    #         slice(bottom, top)
-    #         for bottom, top in zip(core_lower_bound, core_upper_bound)
-    #     )
-    # ]
+from numpy_dimensional_utils import (
+    add_to_slice,
+    extract_slice,
+    periodic_inner_sum,
+)
 
 
 def group_by(a):
@@ -250,6 +143,7 @@ def distribute_subproblems(
     Parameters
     ----------
     uniform_grid_cell_step: np.ndarray
+        Dimension of cells of the uniform grid.
     uniform_grid_size: np.ndarray
         Number of cells in the uniform grid (for each axis). Expected a 1D NumPy
         array whose length is the number of dimensions of the space.
@@ -390,7 +284,7 @@ def compute_mapped_distance_on_subgroup(
     return aggregated_mapped_distance, bounds
 
 
-def generate_uniform_grid(grid_step, grid_size, lower_left=None):
+def generate_uniform_grid(grid_step, grid_size):
     r"""
     Generate an uniform grid according to the given features in `D` dimensions.
 
@@ -399,7 +293,7 @@ def generate_uniform_grid(grid_step, grid_size, lower_left=None):
     grid_step: np.ndarray
         Size of the step of the grid in each direction. Expected a 1D NumPy
         array whose size is `D`.
-    uniform_grid_size: np.ndarray
+    grid_size: np.ndarray
         Number of cells in the grid in each direction. Expected a 1D NumPy
         array whose size is `D`.
 
@@ -409,14 +303,12 @@ def generate_uniform_grid(grid_step, grid_size, lower_left=None):
     """
     # the tranpose is needed because we want the components in the rightmost
     # part of the shape
-    integer_grid = extract_slices(
+    integer_grid = extract_slice(
         np.mgrid, np.zeros_like(grid_size), grid_size
     ).T
     # TODO 3d
     grid = integer_grid * grid_step[None, None]
 
-    if lower_left is not None:
-        grid += lower_left
     return np.swapaxes(grid, 0, 1)
 
 
@@ -441,6 +333,7 @@ def mapped_distance_matrix(
     Parameters
     ----------
     uniform_grid_cell_step: np.ndarray
+        Dimension of cells of the uniform grid.
     uniform_grid_size: np.ndarray
         Number of cells in the uniform grid (for each axis). Expected a 1D NumPy
         array whose length is the number of dimensions of the space.
@@ -479,12 +372,6 @@ def mapped_distance_matrix(
     if dtype is None:
         dtype = non_uniform_points.dtype
 
-    assert (
-        bins_size.shape
-        == uniform_grid_size.shape
-        == uniform_grid_cell_step.shape
-    )
-
     # split and distribute subproblems to the workers
     subgroups_coords_fu = distribute_subproblems(
         uniform_grid_cell_step=uniform_grid_cell_step,
@@ -504,10 +391,12 @@ def mapped_distance_matrix(
     # set to max_distance because we want the (0,0) point to be the first
     # point inside the non-padded bin.
     reference_bin = generate_uniform_grid(
-        uniform_grid_cell_step,
-        bins_size + 2 * max_distance_in_cells,
-        lower_left=-(max_distance_in_cells * uniform_grid_cell_step),
+        uniform_grid_cell_step, bins_size + 2 * max_distance_in_cells
     )
+    lower_left = -(max_distance_in_cells * uniform_grid_cell_step)
+    # the lower left part of the reference bin could reside in the negative
+    # quadrant
+    reference_bin += lower_left
 
     # start computation of the mapped distance
     mapped_distances_fu = client.map(
@@ -532,7 +421,7 @@ def mapped_distance_matrix(
     for _, (uniform_grid_md, bin_bounds) in as_completed(
         mapped_distances_fu, with_results=True
     ):
-        sum_slices(
+        add_to_slice(
             mapped_distance,
             uniform_grid_md,
             bin_bounds[0],
