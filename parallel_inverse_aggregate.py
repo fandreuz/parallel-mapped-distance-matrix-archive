@@ -45,25 +45,6 @@ def sum_slices(arr, val, lower_bounds, upper_bounds):
         ] += val
 
 
-def periodic_sum(arr, val, lower_bounds, upper_bounds):
-    negative = np.where(lower_bounds < 0, np.abs(lower_bounds), 0)
-    arr_size = np.array(arr.shape)
-    overflow = np.where(
-        upper_bounds > arr_size - 1,
-        np.array(val.shape) - (upper_bounds - arr_size + 1),
-        None,
-    )
-    # TODO improve performance
-    val = val[
-        tuple(slice(bottom, top) for bottom, top in zip(negative, overflow))
-    ]
-
-    np.clip(lower_bounds, 0, None, out=lower_bounds)
-    np.clip(upper_bounds, 0, arr_size - 1, out=upper_bounds)
-
-    sum_slices(arr, val, lower_bounds, upper_bounds)
-
-
 def group_by(a):
     r"""
     Groups the values in `a[:,1]` according to the values in `a[:,0]`. Produces
@@ -231,7 +212,12 @@ def distribute_subproblems(
     # number of bins per axis
     bins_per_axis = uniform_grid_size // bins_size
 
+    # periodicity
+    # TODO should we do in parallel?
+    pts = np.mod(pts, (uniform_grid_size * uniform_grid_cell_step)[None])
+
     # for each point in pts, compute the coordinate in the uniform grid
+    # TODO should we do in parallel?
     bin_coords = np.floor_divide(
         pts, uniform_grid_cell_step * bins_size
     ).astype(int)
@@ -327,17 +313,10 @@ def compute_mapped_distance_on_subgroup(
     # aggregate contributions
     aggregated_mapped_distance = np.sum(mapped_distance, axis=-1)
 
-    # compute appropriate upper/lower indexing
-    max_distance_in_cells = np.ceil(
-        max_distance / uniform_grid_cell_step
-    ).astype(int)
-    lb = bin_virtual_lower_left - max_distance_in_cells
     # we add one because the upper bound is not included
-    ub = (bin_virtual_upper_right + 1) + max_distance_in_cells
+    bounds = np.array([bin_virtual_lower_left, bin_virtual_upper_right + 1])
 
-    assert tuple(ub - lb) == aggregated_mapped_distance.shape
-
-    return aggregated_mapped_distance, lb, ub
+    return aggregated_mapped_distance, bounds
 
 
 def generate_uniform_grid(grid_step, grid_size, lower_left=None):
@@ -474,14 +453,46 @@ def mapped_distance_matrix(
     )
 
     mapped_distance = np.zeros(
-        uniform_grid_size,
+        uniform_grid_size + max_distance_in_cells * 2,
         dtype=dtype,
     )
     # uniform_grid_md is the mapped distance contribution from the current
     # subproblem in the indexes uniform_grid_idxes
-    for _, (uniform_grid_md, bin_lb, bin_ub) in as_completed(
+    for _, (uniform_grid_md, bin_bounds) in as_completed(
         mapped_distances_fu, with_results=True
     ):
-        periodic_sum(mapped_distance, uniform_grid_md, bin_lb, bin_ub)
+        sum_slices(
+            mapped_distance,
+            uniform_grid_md,
+            bin_bounds[0],
+            bin_bounds[1] + 2 * max_distance_in_cells,
+        )
 
-    return mapped_distance
+    # forward periodicity
+    mapped_distance[
+        tuple(
+            slice(bottom, top)
+            for bottom, top in zip(
+                max_distance_in_cells, 2 * max_distance_in_cells
+            )
+        )
+    ] += mapped_distance[
+        tuple(slice(bottom, None) for bottom in -max_distance_in_cells)
+    ]
+
+    # backward periodicity
+    mapped_distance[
+        tuple(
+            slice(bottom, top)
+            for bottom, top in zip(
+                -2 * max_distance_in_cells, -max_distance_in_cells
+            )
+        )
+    ] += mapped_distance[tuple(slice(0, top) for top in max_distance_in_cells)]
+
+    return mapped_distance[
+        tuple(
+            slice(bottom, bottom + gs)
+            for bottom, gs in zip(max_distance_in_cells, uniform_grid_size)
+        )
+    ]
