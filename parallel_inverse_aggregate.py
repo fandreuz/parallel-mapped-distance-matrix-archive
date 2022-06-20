@@ -47,48 +47,6 @@ def group_by(a):
     return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
 
 
-def compute_linearized_bin_coords(bins_per_axis, bins_coords):
-    r"""
-    Given a set of N-dimesional bin indexes (for each point we have N indexes,
-    one for each axis) this function linearizes the coordinates in order to
-    associate a unique index in an 1D array to each bin.
-
-    Linear coordinates are assigned in C-like order (last axis changes faster).
-
-    Parameters
-    ----------
-    bins_per_axis: np.ndarray
-        1D NumPy array containing the number of bins for each axis.
-    bins_coords: np.ndarray
-        2D NumPy array containing the bin coordinates to be linearized. Each row
-        is a bin coordinate, having a number of column equal to the number of
-        dimensions of the space.
-
-    Returns
-    -------
-    `np.ndarray`
-    An 1D NumPy array which contains the linearized coordinates of the
-    given bins (starting from zero).
-
-    Example
-    -------
-    If `bins_per_axis = [1,3,2]` and:
-
-        >>> bin_coords = [
-        ...     [0, 1, 1],
-        ...     [1, 1, 1],
-        ...     [0, 0, 1],
-        ...     [1, 2, 0]
-        >>> ]
-
-    then the expected value returned is `[3, 9, 1, 10]`.
-    """
-    shifted_nbins_per_axis = np.ones_like(bins_per_axis, dtype=int)
-    shifted_nbins_per_axis[:-1] = bins_per_axis[1:]
-
-    return np.dot(bins_coords, shifted_nbins_per_axis[:, None])
-
-
 def extract_subproblems(indexes, n_per_subgroup):
     r"""
     Given a set of indexes grouped by bin, extract subproblems from each bin
@@ -189,16 +147,13 @@ def distribute_subproblems(
 
     # we transform our N-Dimensional bins indexing (N is the number of axes)
     # into a linear one (only one index)
-    linearized_bin_coords = compute_linearized_bin_coords(
-        bins_per_axis, bin_coords
-    )
-    # we agument the linear indexing with the index of the point before using
+    linearized_bin_coords = np.ravel_multi_index(bin_coords.T, bins_per_axis)
+    # we augment the linear indexing with the index of the point before using
     # group by, in order to have an index to use in order to access the
     # pts array
-    aug_linearized_bin_coords = np.hstack(
-        [linearized_bin_coords, np.arange(len(pts))[:, None]]
+    aug_linearized_bin_coords = np.stack(
+        (linearized_bin_coords, np.arange(len(pts))), axis=-1
     )
-    # group by puts into the same group those points which are in the same bin
     indexes_inside_bins = group_by(aug_linearized_bin_coords)
 
     # we create subproblems for each bin (i.e. we split points in the
@@ -371,6 +326,9 @@ def mapped_distance_matrix(
         weights = np.ones(len(non_uniform_points), dtype=int)
     if dtype is None:
         dtype = non_uniform_points.dtype
+
+    # bins should divide properly the grid
+    assert np.all(np.mod(uniform_grid_size, bins_size) == 0)
 
     # split and distribute subproblems to the workers
     subgroups_coords_fu = distribute_subproblems(
