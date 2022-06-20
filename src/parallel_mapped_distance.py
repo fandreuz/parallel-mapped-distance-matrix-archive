@@ -279,6 +279,7 @@ def mapped_distance_matrix(
     exact_max_distance=True,
     pts_per_future=5,
     dtype=None,
+    cell_reference_point_offset=0,
 ):
     r"""
     Compute the mapped distance matrix of a set of non uniform points
@@ -317,6 +318,12 @@ def mapped_distance_matrix(
     pts_per_future: int
         Number of points in a subproblem. If `pts_per_future=-1`, then there's
         no upper bound.
+    cell_reference_point_offset: np.array or int
+        Offset of the reference point (i.e. the point used to compute the
+        distance between a cell and a non-uniform point) from the bottom left
+        point of the cell. Zero by default, the reference point should never
+        lie outside the cell to preserve the correctness of the algorithm. No
+        sanity checks are performed.
 
     Returns
     -------
@@ -326,6 +333,8 @@ def mapped_distance_matrix(
         weights = np.ones(len(non_uniform_points), dtype=int)
     if dtype is None:
         dtype = non_uniform_points.dtype
+    if len(non_uniform_points) == 0:
+        return np.zeros(uniform_grid_size, dtype=dtype)
 
     # bins should divide properly the grid
     assert np.all(np.mod(uniform_grid_size, bins_size) == 0)
@@ -352,9 +361,7 @@ def mapped_distance_matrix(
         uniform_grid_cell_step, bins_size + 2 * max_distance_in_cells
     )
     lower_left = -(max_distance_in_cells * uniform_grid_cell_step)
-    # the lower left part of the reference bin could reside in the negative
-    # quadrant
-    reference_bin += lower_left
+    reference_bin += lower_left + cell_reference_point_offset
 
     # start computation of the mapped distance
     mapped_distances_fu = client.map(
