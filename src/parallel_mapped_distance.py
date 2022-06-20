@@ -224,7 +224,7 @@ def compute_mapped_distance_on_subgroup(
     )
 
     if exact_max_distance:
-        nearby = distances < max_distance
+        nearby = distances <= max_distance
         mapped_distance = np.zeros_like(distances, dtype=dtype)
         mapped_distance[nearby] = function(distances[nearby])
     else:
