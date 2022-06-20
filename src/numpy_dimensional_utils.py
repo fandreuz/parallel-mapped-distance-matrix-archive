@@ -107,70 +107,33 @@ def periodic_inner_sum(arr, core_lower_bound, core_upper_bound):
     core_lower_bound: iterable
         Lower bound (included) of the core of `arr`, for each dimension of
         `arr`.
-    upper_bounds: iterable
+    core_upper_bound: iterable
         Upper bound (not included) of the core of `arr`, for each dimension of
         `arr`.
     """
 
-    right_size = np.array(arr.shape) - core_upper_bound
+    arr_size = np.array(arr.shape)
 
-    # 1D
-    # arr[core_lower_bound[0] : 2 * core_lower_bound[0]] += arr[
-    #     : core_lower_bound[0]
-    # ]
-    # arr[core_upper_bound[0] - right_size[0] : core_upper_bound[0]] += arr[
-    #     core_upper_bound[0] :
-    # ]
-    # return arr[core_lower_bound[0] : core_upper_bound[0]]
-
-    # 2D
     arr[
-        core_lower_bound[0] : 2 * core_lower_bound[0],
-        core_lower_bound[1] : 2 * core_lower_bound[1],
-    ] += arr[: core_lower_bound[0], : core_lower_bound[1]]
+        (core_upper_bound[0] - core_lower_bound[0]) : core_upper_bound[0]
+    ] += arr[: core_lower_bound[0]]
     arr[
-        core_upper_bound[0] - right_size[0] : core_upper_bound[0],
-        core_upper_bound[1] - right_size[1] : core_upper_bound[1],
-    ] += arr[core_upper_bound[0] :, core_upper_bound[1] :]
-    return arr[
-        core_lower_bound[0] : core_upper_bound[0],
-        core_lower_bound[1] : core_upper_bound[1],
-    ]
+        core_lower_bound[0] : core_lower_bound[0]
+        + (arr_size[0] - core_upper_bound[0])
+    ] += arr[core_upper_bound[0] :]
 
-    # 3D
-    # arr[
-    #     core_lower_bound[0] : 2 * core_lower_bound[0],
-    #     core_lower_bound[1] : 2 * core_lower_bound[1],
-    #     core_lower_bound[2] : 2 * core_lower_bound[2],
-    # ] += arr[
-    #     : core_lower_bound[0], : core_lower_bound[1], : core_lower_bound[2]
-    # ]
-    # arr[
-    #     core_upper_bound[0] - right_size[0] : core_upper_bound[0],
-    #     core_upper_bound[1] - right_size[1] : core_upper_bound[1],
-    #     core_upper_bound[2] - right_size[2] : core_upper_bound[2],
-    # ] += arr[
-    #     core_upper_bound[0] :, core_upper_bound[1] :, core_upper_bound[2] :
-    # ]
-    # return arr[
-    #     core_lower_bound[0] : core_upper_bound[0],
-    #     core_lower_bound[1] : core_upper_bound[1],
-    #     core_lower_bound[2] : core_upper_bound[2],
-    # ]
+    core_rows = slice(core_lower_bound[0], core_upper_bound[0])
+    arr = arr[core_rows]
 
-    # ND
-    # arr[
-    #     tuple(slice(bottom, 2 * bottom) for bottom in core_lower_bound)
-    # ] += arr[tuple(slice(0, bottom) for bottom in core_lower_bound)]
-    # arr[
-    #     tuple(
-    #         slice(top - rs, top)
-    #         for top, rs in zip(core_upper_bound, right_size)
-    #     )
-    # ] += arr[tuple(slice(top, None) for top in core_upper_bound)]
-    # return arr[
-    #     tuple(
-    #         slice(bottom, top)
-    #         for bottom, top in zip(core_lower_bound, core_upper_bound)
-    #     )
-    # ]
+    arr[
+        :,
+        (core_upper_bound[1] - core_lower_bound[1]) : core_upper_bound[1],
+    ] += arr[:, : core_lower_bound[1]]
+    arr[
+        :,
+        core_lower_bound[1] : (
+            core_lower_bound[1] + (arr_size[1] - core_upper_bound[1])
+        ),
+    ] += arr[:, core_upper_bound[1] :]
+
+    return arr[:, core_lower_bound[1] : core_upper_bound[1]]
