@@ -346,3 +346,44 @@ def test_overlapping_points3():
     expected[0, [-1, 1]] += np.sqrt(0.3 * 0.3 + 0.01 * 0.01)
 
     np.testing.assert_allclose(m, expected)
+
+
+def test_overlapping_points_weight():
+    pts = np.array([[1.0, 1.0], [0.9, 0.91], [0.89, 0.9], [1.19, 1.2]])
+
+    m = mapped_distance_matrix(
+        uniform_grid_cell_step=np.array([0.3, 0.3]),
+        uniform_grid_size=np.array([4, 4]),
+        bins_size=np.array([2, 2]),
+        non_uniform_points=pts,
+        max_distance=0.31,
+        func=identity,
+        client=client,
+        weights=np.array([0.5, 0.2, 0.3, 0.4]),
+    )
+
+    expected = np.zeros((4, 4), float)
+
+    # 1
+    expected[-1, -1] += 0.5 * np.sqrt(2 * 0.1 * 0.1)
+    expected[0, -1] += 0.5 * np.sqrt(0.2 * 0.2 + 0.1 * 0.1)
+    expected[-1, 0] += 0.5 * np.sqrt(0.2 * 0.2 + 0.1 * 0.1)
+    expected[0, 0] += 0.5 * np.sqrt(0.2 * 0.2 * 2)
+
+    # 2
+    expected[-1, -1] += 0.2 * 0.01
+    expected[-1, 0] += 0.2 * 0.29
+    expected[[0, -2], -1] += 0.2 * np.sqrt(0.3 * 0.3 + 0.01 * 0.01)
+
+    # 3
+    expected[-1, -1] += 0.3 * 0.01
+    expected[-2, -1] += 0.3 * 0.29
+    expected[-1, [0, -2]] += 0.3 * np.sqrt(0.3 * 0.3 + 0.01 * 0.01)
+    expected[0, -1] += 0.3 * 0.31
+
+    # 4
+    expected[0, 0] += 0.4 * 0.01
+    expected[-1, 0] += 0.4 * 0.29
+    expected[0, [-1, 1]] += 0.4 * np.sqrt(0.3 * 0.3 + 0.01 * 0.01)
+
+    np.testing.assert_allclose(m, expected)

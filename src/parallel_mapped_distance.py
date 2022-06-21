@@ -231,7 +231,7 @@ def compute_mapped_distance_on_subgroup(
         mapped_distance = function(distances)
 
     # aggregate contributions
-    aggregated_mapped_distance = np.sum(mapped_distance, axis=-1)
+    aggregated_mapped_distance = mapped_distance.dot(weights)
 
     # we add one because the upper bound is not included
     bounds = np.array([bin_virtual_lower_left, bin_virtual_upper_right + 1])
