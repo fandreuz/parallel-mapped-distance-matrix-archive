@@ -90,6 +90,7 @@ def distribute_subproblems(
     weights,
     pts_per_future,
     client,
+    scatter,
 ):
     r"""
     Given a set of points and the features of the uniform grid, find the
@@ -120,6 +121,9 @@ def distribute_subproblems(
     client: dask.distributed.Client
         Dask `Client` to be used to move resources to the appropriate places in
         order to have them ready for the following computation.
+    scatter: boolean
+        If true, data is "scattered" (i.e. `Client.scatter`) before starting
+        the computation.
 
     Returns
     -------
@@ -132,22 +136,20 @@ def distribute_subproblems(
         3. Indexes of the non-uniform points in this subproblem wrt `pts`;
         4. Weights for the non uniform points in this subproblem.
     """
-    # number of bins per axis
     bins_per_axis = uniform_grid_size // bins_size
 
     # periodicity
-    # TODO should we do in parallel?
     pts = np.mod(pts, (uniform_grid_size * uniform_grid_cell_step)[None])
 
-    # for each point in pts, compute the coordinate in the uniform grid
-    # TODO should we do in parallel?
-    bin_coords = np.floor_divide(
+    pts_bin_coords = np.floor_divide(
         pts, uniform_grid_cell_step * bins_size
     ).astype(int)
 
     # we transform our N-Dimensional bins indexing (N is the number of axes)
     # into a linear one (only one index)
-    linearized_bin_coords = np.ravel_multi_index(bin_coords.T, bins_per_axis)
+    linearized_bin_coords = np.ravel_multi_index(
+        pts_bin_coords.T, bins_per_axis
+    )
     # we augment the linear indexing with the index of the point before using
     # group by, in order to have an index to use in order to access the
     # pts array
@@ -162,14 +164,17 @@ def distribute_subproblems(
     # each subproblem is treated by a single Future. each bin spawns one or
     # more subproblems.
 
-    # TODO needed?
-    bin_coords_fu = client.scatter(bin_coords, broadcast=True)
-    pts_fu = client.scatter(pts, broadcast=True)
+    if scatter:
+        bin_coords_fu = client.scatter(pts_bin_coords, broadcast=True)
+        pts_fu = client.scatter(pts, broadcast=True)
+    else:
+        bin_coords_fu = pts_bin_coords
+        pts_fu = pts
 
-    def bin_content_tuple(bin_content, pts, bin_coords):
+    def bin_content_tuple(bin_content, pts, pts_bin_coords):
         return (
             pts[bin_content],
-            bin_coords[bin_content[0]],
+            pts_bin_coords[bin_content[0]],
             bin_content,
             weights[bin_content],
         )
@@ -180,7 +185,7 @@ def distribute_subproblems(
             subgroup for bin_content in subproblems for subgroup in bin_content
         ),
         pts=pts_fu,
-        bin_coords=bin_coords_fu,
+        pts_bin_coords=bin_coords_fu,
     )
 
 
@@ -280,6 +285,7 @@ def mapped_distance_matrix(
     pts_per_future=5,
     dtype=None,
     cell_reference_point_offset=0,
+    scatter=True,
 ):
     r"""
     Compute the mapped distance matrix of a set of non uniform points
@@ -324,6 +330,9 @@ def mapped_distance_matrix(
         point of the cell. Zero by default, the reference point should never
         lie outside the cell to preserve the correctness of the algorithm. No
         sanity checks are performed.
+    scatter: boolean
+        If true, data is "scattered" (i.e. `Client.scatter`) before starting
+        the computation.
 
     Returns
     -------
@@ -348,6 +357,7 @@ def mapped_distance_matrix(
         pts_per_future=pts_per_future,
         client=client,
         weights=weights,
+        scatter=scatter,
     )
 
     max_distance_in_cells = np.ceil(
