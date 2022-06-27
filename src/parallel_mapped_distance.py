@@ -67,7 +67,6 @@ def extract_subproblems(indexes, n_per_subgroup):
     iterable of subproblems.
     """
     if n_per_subgroup != -1:
-        # indexes inside bins splitted according to pts_per_future
         return map(
             # here we apply the finer granularity (#pts per future)
             lambda arr: np.array_split(
@@ -145,13 +144,13 @@ def distribute_subproblems(
         pts, uniform_grid_cell_step * bins_size
     ).astype(int)
 
-    # we transform our N-Dimensional bins indexing (N is the number of axes)
+    # transform the N-Dimensional bins indexing (N is the number of axes)
     # into a linear one (only one index)
     linearized_bin_coords = np.ravel_multi_index(
         pts_bin_coords.T, bins_per_axis
     )
-    # we augment the linear indexing with the index of the point before using
-    # group by, in order to have an index to use in order to access the
+    # augment the linear indexing with the index of the point before using
+    # group by, in order to have an index that we can use to access the
     # pts array
     aug_linearized_bin_coords = np.stack(
         (linearized_bin_coords, np.arange(len(pts))), axis=-1
@@ -195,6 +194,7 @@ def compute_mapped_distance_on_subgroup(
     uniform_grid_size,
     bins_size,
     max_distance,
+    max_distance_in_cells,
     function,
     exact_max_distance,
     reference_bin,
@@ -208,7 +208,6 @@ def compute_mapped_distance_on_subgroup(
     -------
     `tuple`
     """
-    # unwrap the content of the future
     subgroup, bin_coords, nup_idxes, weights = subgroup_info
 
     # location of the lower left point of the non-padded bin in terms
@@ -222,7 +221,6 @@ def compute_mapped_distance_on_subgroup(
     # [0,0]).
     subgroup -= bin_virtual_lower_left * uniform_grid_cell_step
 
-    # TODO 3d?
     distances = np.linalg.norm(
         reference_bin[:, :, None] - subgroup[None, None],
         axis=-1,
@@ -235,13 +233,13 @@ def compute_mapped_distance_on_subgroup(
     else:
         mapped_distance = function(distances)
 
-    # aggregate contributions
-    aggregated_mapped_distance = mapped_distance.dot(weights)
-
     # we add one because the upper bound is not included
-    bounds = np.array([bin_virtual_lower_left, bin_virtual_upper_right + 1])
+    bin_bounds = np.array(
+        [bin_virtual_lower_left, bin_virtual_upper_right + 1]
+    )
+    bin_bounds[1] += 2 * max_distance_in_cells
 
-    return aggregated_mapped_distance, bounds
+    return mapped_distance.dot(weights), bin_bounds
 
 
 def generate_uniform_grid(grid_step, grid_size):
@@ -363,6 +361,7 @@ def mapped_distance_matrix(
     max_distance_in_cells = np.ceil(
         max_distance / uniform_grid_cell_step
     ).astype(int)
+
     # build a reference padded bin. the padding is given by taking twice
     # (in each direction) the value of max_distance. the lower_left point is
     # set to max_distance because we want the (0,0) point to be the first
@@ -383,24 +382,21 @@ def mapped_distance_matrix(
         function=func,
         reference_bin=reference_bin,
         max_distance=max_distance,
+        max_distance_in_cells=max_distance_in_cells,
         exact_max_distance=exact_max_distance,
         dtype=dtype,
     )
 
     mapped_distance = np.zeros(
-        uniform_grid_size + max_distance_in_cells * 2,
+        uniform_grid_size + 2 * max_distance_in_cells,
         dtype=dtype,
     )
-    # uniform_grid_md is the mapped distance contribution from the current
-    # subproblem in the indexes uniform_grid_idxes
-    for _, (uniform_grid_md, bin_bounds) in as_completed(
+
+    for _, (bin_aggregated_grid, bin_bounds) in as_completed(
         mapped_distances_fu, with_results=True
     ):
         add_to_slice(
-            mapped_distance,
-            uniform_grid_md,
-            bin_bounds[0],
-            bin_bounds[1] + 2 * max_distance_in_cells,
+            mapped_distance, bin_aggregated_grid, bin_bounds[0], bin_bounds[1]
         )
 
     return periodic_inner_sum(
