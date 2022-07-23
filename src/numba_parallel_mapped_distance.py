@@ -1,6 +1,6 @@
 import numpy as np
-
-from dask.distributed import as_completed
+import numba as nb
+from concurrent.futures import wait
 
 from numpy_dimensional_utils import (
     add_to_slice,
@@ -8,7 +8,9 @@ from numpy_dimensional_utils import (
     periodic_inner_sum,
 )
 
-import numba as nb
+add_to_slice = nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)(
+    add_to_slice
+)
 
 
 def group_by(a):
@@ -83,15 +85,52 @@ def extract_subproblems(indexes, n_per_subgroup):
         return map(lambda arr: (np.array(arr),), indexes)
 
 
-def distribute_subproblems(
+def start_subproblem(
+    bin_content,
+    pts,
+    bins_coords,
+    weights,
+    uniform_grid_cell_step,
+    uniform_grid_size,
+    bins_size,
+    max_distance,
+    max_distance_in_cells,
+    function,
+    reference_bin,
+    exact_max_distance,
+    global_mapped_distance_matrix,
+):
+    compute_mapped_distance_on_subgroup(
+        subgroup_content=pts[bin_content],
+        bin_coords=bins_coords[bin_content[0]],
+        nup_idxes=bin_content,
+        weights=weights[bin_content],
+        uniform_grid_cell_step=uniform_grid_cell_step,
+        uniform_grid_size=uniform_grid_size,
+        bins_size=bins_size,
+        max_distance=max_distance,
+        max_distance_in_cells=max_distance_in_cells,
+        function=function,
+        reference_bin=reference_bin,
+        exact_max_distance=exact_max_distance,
+        global_mapped_distance_matrix=global_mapped_distance_matrix,
+    )
+
+
+def distribute_and_start_subproblems(
     uniform_grid_cell_step,
     uniform_grid_size,
     bins_size,
     pts,
     weights,
     pts_per_future,
-    client,
-    scatter,
+    executor,
+    max_distance,
+    max_distance_in_cells,
+    function,
+    reference_bin,
+    exact_max_distance,
+    global_mapped_distance_matrix,
 ):
     r"""
     Given a set of points and the features of the uniform grid, find the
@@ -119,12 +158,7 @@ def distribute_subproblems(
         :func:`mapped_distance_matrix`.
     pts_per_future: int
         Number of points in a subproblem. If `-1`, then there's no upper bound.
-    client: dask.distributed.Client
-        Dask `Client` to be used to move resources to the appropriate places in
-        order to have them ready for the following computation.
-    scatter: boolean
-        If true, data is "scattered" (i.e. `Client.scatter`) before starting
-        the computation.
+    executor:
 
     Returns
     -------
@@ -165,42 +199,43 @@ def distribute_subproblems(
     # each subproblem is treated by a single Future. each bin spawns one or
     # more subproblems.
 
-    if scatter:
-        bin_coords_fu = client.scatter(pts_bin_coords, broadcast=True)
-        pts_fu = client.scatter(pts, broadcast=True)
-    else:
-        bin_coords_fu = pts_bin_coords
-        pts_fu = pts
-
-    def bin_content_tuple(bin_content, pts, pts_bin_coords):
-        return (
-            pts[bin_content],
-            pts_bin_coords[bin_content[0]],
-            bin_content,
-            weights[bin_content],
+    return (
+        executor.submit(
+            start_subproblem,
+            subgroup,
+            pts,
+            pts_bin_coords,
+            weights,
+            uniform_grid_cell_step,
+            uniform_grid_size,
+            bins_size,
+            max_distance,
+            max_distance_in_cells,
+            function,
+            reference_bin,
+            exact_max_distance,
+            global_mapped_distance_matrix,
         )
-
-    return client.map(
-        bin_content_tuple,
-        tuple(
-            subgroup for bin_content in subproblems for subgroup in bin_content
-        ),
-        pts=pts_fu,
-        pts_bin_coords=bin_coords_fu,
+        for bin_content in subproblems
+        for subgroup in bin_content
     )
 
 
 @nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)
 def compute_mapped_distance_on_subgroup(
-    subgroup_info,
+    subgroup_content,
+    bin_coords,
+    nup_idxes,
+    weights,
     uniform_grid_cell_step,
     uniform_grid_size,
     bins_size,
     max_distance,
     max_distance_in_cells,
     function,
-    exact_max_distance,
     reference_bin,
+    exact_max_distance,
+    global_mapped_distance_matrix,
 ):
     r"""
     Function to be executed on the worker, provides a mapping for each
@@ -210,10 +245,6 @@ def compute_mapped_distance_on_subgroup(
     -------
     `tuple`
     """
-    subgroup = subgroup_info[0]
-    bin_coords = subgroup_info[1]
-    nup_idxes = subgroup_info[2]
-    weights = subgroup_info[3]
 
     # location of the lower left point of the non-padded bin in terms
     # of uniform grid cells
@@ -224,7 +255,7 @@ def compute_mapped_distance_on_subgroup(
     # translate the subgroup in order to locate it nearby the reference bin
     # (reminder: the lower left point of the (non-padded) reference bin is
     # [0,0]).
-    subgroup -= bin_virtual_lower_left * uniform_grid_cell_step
+    subgroup_content -= bin_virtual_lower_left * uniform_grid_cell_step
 
     x_grid, y_grid, cmponents = reference_bin.shape
     x_strides, y_strides, cmponents_strides = reference_bin.strides
@@ -234,17 +265,28 @@ def compute_mapped_distance_on_subgroup(
         strides=(x_strides, y_strides, 0, cmponents_strides),
     )
     _subgroup = np.lib.stride_tricks.as_strided(
-        subgroup,
-        shape=(1, 1, *subgroup.shape),
-        strides=(0, 0, *subgroup.strides),
+        subgroup_content,
+        shape=(1, 1, *subgroup_content.shape),
+        strides=(0, 0, *subgroup_content.strides),
     )
 
     distances = np.sqrt(
         np.sum(np.power(_reference_bin - _subgroup, 2), axis=3)
     )
-    mapped_distance = distances
 
-    return (
+    if exact_max_distance:
+        mapped_distance = np.zeros_like(distances)
+        L, M, N = distances.shape
+        for i in range(L):
+            for j in range(M):
+                for k in range(N):
+                    if distances[i, j, k] < max_distance:
+                        mapped_distance[i, j, k] = function(distances[i, j, k])
+    else:
+        mapped_distance = function(distances)
+
+    add_to_slice(
+        global_mapped_distance_matrix,
         mapped_distance.sum(axis=2),
         bin_virtual_lower_left,
         bin_virtual_upper_right + 1 + 2 * max_distance_in_cells,
@@ -286,12 +328,11 @@ def mapped_distance_matrix(
     non_uniform_points,
     max_distance,
     func,
-    client,
+    executor,
     weights=None,
     exact_max_distance=True,
     pts_per_future=5,
     cell_reference_point_offset=0,
-    scatter=True,
 ):
     r"""
     Compute the mapped distance matrix of a set of non uniform points
@@ -318,8 +359,7 @@ def mapped_distance_matrix(
     function: function
         Function used to map the distance between uniform and non-uniform
         points.
-    client: dask.distributed.Client
-        Dask `Client` used for the computations.
+    executor:
     weights: np.ndarray
         Weights used to scale the contribution of each non-uniform point into
         the uniform grid.
@@ -336,9 +376,6 @@ def mapped_distance_matrix(
         point of the cell. Zero by default, the reference point should never
         lie outside the cell to preserve the correctness of the algorithm. No
         sanity checks are performed.
-    scatter: boolean
-        If true, data is "scattered" (i.e. `Client.scatter`) before starting
-        the computation.
 
     Returns
     -------
@@ -352,18 +389,6 @@ def mapped_distance_matrix(
 
     # bins should divide properly the grid
     assert np.all(np.mod(uniform_grid_size, bins_size) == 0)
-
-    # split and distribute subproblems to the workers
-    subgroups_coords_fu = distribute_subproblems(
-        uniform_grid_cell_step=uniform_grid_cell_step,
-        uniform_grid_size=uniform_grid_size,
-        bins_size=bins_size,
-        pts=non_uniform_points,
-        pts_per_future=pts_per_future,
-        client=client,
-        weights=weights,
-        scatter=scatter,
-    )
 
     max_distance_in_cells = np.ceil(
         max_distance / uniform_grid_cell_step
@@ -379,31 +404,29 @@ def mapped_distance_matrix(
     lower_left = -(max_distance_in_cells * uniform_grid_cell_step)
     reference_bin += lower_left + cell_reference_point_offset
 
-    # start computation of the mapped distance
-    mapped_distances_fu = client.map(
-        compute_mapped_distance_on_subgroup,
-        subgroups_coords_fu,
-        uniform_grid_size=uniform_grid_size,
-        uniform_grid_cell_step=uniform_grid_cell_step,
-        bins_size=bins_size,
-        function=func,
-        reference_bin=reference_bin,
-        max_distance=max_distance,
-        max_distance_in_cells=max_distance_in_cells,
-        exact_max_distance=exact_max_distance,
-    )
-
     mapped_distance = np.zeros(
         uniform_grid_size + 2 * max_distance_in_cells,
         dtype=dtype,
     )
 
-    for _, (bin_aggregated_grid, bin_lbound, bin_ubound) in as_completed(
-        mapped_distances_fu, with_results=True
-    ):
-        add_to_slice(
-            mapped_distance, bin_aggregated_grid, bin_lbound, bin_ubound
-        )
+    # split and distribute subproblems to the workers
+    futures = distribute_and_start_subproblems(
+        uniform_grid_cell_step=uniform_grid_cell_step,
+        uniform_grid_size=uniform_grid_size,
+        bins_size=bins_size,
+        pts=non_uniform_points,
+        pts_per_future=pts_per_future,
+        executor=executor,
+        weights=weights,
+        max_distance=max_distance,
+        max_distance_in_cells=max_distance_in_cells,
+        reference_bin=reference_bin,
+        function=func,
+        exact_max_distance=exact_max_distance,
+        global_mapped_distance_matrix=mapped_distance,
+    )
+
+    wait(tuple(futures))
 
     return periodic_inner_sum(
         mapped_distance,
