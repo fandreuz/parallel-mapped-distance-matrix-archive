@@ -183,20 +183,19 @@ def compute_mapped_distance_on_subgroup(
         np.sum(np.power(_reference_bin - _subgroup, 2), axis=3)
     )
 
-    if exact_max_distance:
-        mapped_distance = np.zeros_like(distances)
-        L, M, N = distances.shape
-        for i in range(L):
-            for j in range(M):
-                for k in range(N):
-                    if distances[i, j, k] < max_distance:
-                        mapped_distance[i, j, k] = function(distances[i, j, k])
-    else:
-        mapped_distance = function(distances)
+    mapped_distance = np.zeros_like(distances[:, :, 0])
+    L, M, N = distances.shape
+    for i in range(L):
+        for j in range(M):
+            for k in range(N):
+                if distances[i, j, k] < max_distance:
+                    mapped_distance[i, j] += (
+                        function(distances[i, j, k]) * weights[k]
+                    )
 
     add_to_slice(
         global_mapped_distance_matrix,
-        mapped_distance.sum(axis=2),
+        mapped_distance,
         bin_virtual_lower_left,
         bin_virtual_upper_right + 1 + 2 * max_distance_in_cells,
     )
@@ -247,7 +246,7 @@ def mapped_distance_matrix(
         weights = np.ones(len(non_uniform_points), dtype=int)
     dtype = non_uniform_points.dtype
     if len(non_uniform_points) == 0:
-        return np.zeros(uniform_grid_size, dtype=pts.dtype)
+        return np.zeros(uniform_grid_size, dtype=dtype)
 
     # bins should divide properly the grid
     assert np.all(np.mod(uniform_grid_size, bins_size) == 0)
