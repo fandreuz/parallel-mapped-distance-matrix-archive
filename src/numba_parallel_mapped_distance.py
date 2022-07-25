@@ -8,81 +8,11 @@ from numpy_dimensional_utils import (
     periodic_inner_sum,
 )
 
+from parallel_mapped_distance import group_by, extract_subproblems
+
 add_to_slice = nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)(
     add_to_slice
 )
-
-
-def group_by(a):
-    r"""
-    Groups the values in `a[:,1]` according to the values in `a[:,0]`. Produces
-    a list of lists, each inner list is the set of values in `a[:,1]` that
-    share a common value in the first column.
-
-    Parameters
-    ----------
-    a: np.ndarray
-        2D NumPy array, should have two columns. The first one contains the
-        reference values to be used for the grouping, the second should
-        contain the values to be grouped.
-
-    Returns
-    -------
-    `list`
-    A list of grouped values from the second column of `a`, according to the
-    first column of `a`.
-
-    Example
-    -------
-    The expected returned value for:
-
-        >>> bin_coords = [
-        ...     [0, 1],
-        ...     [1, 2],
-        ...     [1, 3],
-        ...     [0, 4],
-        ...     [2, 5]
-        >>> ]
-
-    is `[[1,4], [2,3], [5]]`.
-    """
-
-    a = a[a[:, 0].argsort()]
-    return np.split(a[:, 1], np.unique(a[:, 0], return_index=True)[1][1:])
-
-
-def extract_subproblems(indexes, n_per_subgroup):
-    r"""
-    Given a set of indexes grouped by bin, extract subproblems from each bin
-    according to the parameter `n_per_subgroup`.
-
-    Parameters
-    ----------
-    indexes: list
-        `list` of list. Each inner list contains the set of indexes inside
-        the corresponding bin.
-    n_per_subgroup: int
-        Number of points in a subproblem. If `-1`, then there's no upper bound.
-
-    Returns
-    -------
-    `iterable`
-    An iterable whose elements correspond to bins. Each iterable wraps an
-    iterable of subproblems.
-    """
-    if n_per_subgroup != -1:
-        return map(
-            # here we apply the finer granularity (#pts per future)
-            lambda arr: np.array_split(
-                arr, np.ceil(len(arr) / n_per_subgroup)
-            ),
-            indexes,
-        )
-    else:
-        # we transform the lists of indexes in indexes_inside_bins to NumPy
-        # arrays. we also wrap them into 1-element tuples because of how we
-        # treat them in client.map
-        return map(lambda arr: (np.array(arr),), indexes)
 
 
 def start_subproblem(
@@ -138,27 +68,6 @@ def distribute_and_start_subproblems(
     according to the given value of `pts_per_future`. The given `Client`
     instance is used to send each subproblem to the appropriate worker (no
     computation is started though).
-
-    Parameters
-    ----------
-    uniform_grid_cell_step: np.ndarray
-        Dimension of cells of the uniform grid.
-    uniform_grid_size: np.ndarray
-        Number of cells in the uniform grid (for each axis). Expected a 1D NumPy
-        array whose length is the number of dimensions of the space.
-    bins_size: np.ndarray
-        Number of cells in a bin (for each axis). Expected a NumPy
-        1D array whose length is the number of dimensions of the space.
-    pts: np.ndarray
-        Non-uniform points scattered in the uniform grid. Expected a 2D NumPy
-        array whose number of rows is the number of points, and whose number of
-        columns is the number of dimensions of the space.
-    weights: np.ndarray
-        Weights defined as for the parameter `weights` in
-        :func:`mapped_distance_matrix`.
-    pts_per_future: int
-        Number of points in a subproblem. If `-1`, then there's no upper bound.
-    executor:
 
     Returns
     -------
@@ -297,15 +206,6 @@ def generate_uniform_grid(grid_step, grid_size):
     r"""
     Generate an uniform grid according to the given features in `D` dimensions.
 
-    Parameters
-    ----------
-    grid_step: np.ndarray
-        Size of the step of the grid in each direction. Expected a 1D NumPy
-        array whose size is `D`.
-    grid_size: np.ndarray
-        Number of cells in the grid in each direction. Expected a 1D NumPy
-        array whose size is `D`.
-
     Returns
     -------
     `np.ndarray`
@@ -338,44 +238,6 @@ def mapped_distance_matrix(
     Compute the mapped distance matrix of a set of non uniform points
     distributed inside a uniform grid whose features are specified in
     `uniform_grid_cell_step`, `uniform_grid_size`, `bins_size`.
-
-    Parameters
-    ----------
-    uniform_grid_cell_step: np.ndarray
-        Dimension of cells of the uniform grid.
-    uniform_grid_size: np.ndarray
-        Number of cells in the uniform grid (for each axis). Expected a 1D NumPy
-        array whose length is the number of dimensions of the space.
-    bins_size: np.ndarray
-        Number of cells in a bin (for each axis). Expected a NumPy
-        1D array whose length is the number of dimensions of the space.
-    non_uniform_points: np.ndarray
-        Non-uniform points scattered in the uniform grid. Expected a 2D NumPy
-        array whose number of rows is the number of points, and whose number of
-        columns is the number of dimensions of the space.
-    max_distance: int
-        Maximum distance between a pair uniform/non-uniform point to be
-        considered not zero.
-    function: function
-        Function used to map the distance between uniform and non-uniform
-        points.
-    executor:
-    weights: np.ndarray
-        Weights used to scale the contribution of each non-uniform point into
-        the uniform grid.
-    exact_max_distance: bool
-        If `True`, the result is more precise but might require some additional
-        work and thus damage performance.
-        # TODO explain better
-    pts_per_future: int
-        Number of points in a subproblem. If `pts_per_future=-1`, then there's
-        no upper bound.
-    cell_reference_point_offset: np.array or int
-        Offset of the reference point (i.e. the point used to compute the
-        distance between a cell and a non-uniform point) from the bottom left
-        point of the cell. Zero by default, the reference point should never
-        lie outside the cell to preserve the correctness of the algorithm. No
-        sanity checks are performed.
 
     Returns
     -------
