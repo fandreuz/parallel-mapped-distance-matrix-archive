@@ -185,10 +185,19 @@ def compute_mapped_distance_on_subgroup(
 
     mapped_distance = np.zeros_like(distances[:, :, 0])
     L, M, N = distances.shape
-    for i in range(L):
-        for j in range(M):
-            for k in range(N):
-                if distances[i, j, k] < max_distance:
+
+    if exact_max_distance:
+        for i in range(L):
+            for j in range(M):
+                for k in range(N):
+                    if distances[i, j, k] < max_distance:
+                        mapped_distance[i, j] += (
+                            function(distances[i, j, k]) * weights[k]
+                        )
+    else:
+        for i in range(L):
+            for j in range(M):
+                for k in range(N):
                     mapped_distance[i, j] += (
                         function(distances[i, j, k]) * weights[k]
                     )
