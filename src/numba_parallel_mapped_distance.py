@@ -131,8 +131,29 @@ def distribute_and_start_subproblems(
     )
 
 
-@nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)
+@nb.generated_jit(nopython=True)
 def compute_mapped_distance_on_subgroup(
+    subgroup_content,
+    bin_coords,
+    nup_idxes,
+    weights,
+    uniform_grid_cell_step,
+    bins_size,
+    max_distance,
+    max_distance_in_cells,
+    function,
+    reference_bin,
+    exact_max_distance,
+    global_mapped_distance_matrix,
+):
+    if exact_max_distance:
+        return compute_mapped_distance_on_subgroup_exact_distance
+    else:
+        return compute_mapped_distance_on_subgroup_nexact_distance
+
+
+@nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)
+def compute_mapped_distance_on_subgroup_nexact_distance(
     subgroup_content,
     bin_coords,
     nup_idxes,
@@ -186,18 +207,80 @@ def compute_mapped_distance_on_subgroup(
     mapped_distance = np.zeros_like(distances[:, :, 0])
     L, M, N = distances.shape
 
-    if exact_max_distance:
-        for i in range(L):
-            for j in range(M):
-                for k in range(N):
-                    if distances[i, j, k] < max_distance:
-                        mapped_distance[i, j] += (
-                            function(distances[i, j, k]) * weights[k]
-                        )
-    else:
-        for i in range(L):
-            for j in range(M):
-                for k in range(N):
+    for i in range(L):
+        for j in range(M):
+            for k in range(N):
+                mapped_distance[i, j] += (
+                    function(distances[i, j, k]) * weights[k]
+                )
+
+    add_to_slice(
+        global_mapped_distance_matrix,
+        mapped_distance,
+        bin_virtual_lower_left,
+        bin_virtual_upper_right + 1 + 2 * max_distance_in_cells,
+    )
+
+
+@nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)
+def compute_mapped_distance_on_subgroup_exact_distance(
+    subgroup_content,
+    bin_coords,
+    nup_idxes,
+    weights,
+    uniform_grid_cell_step,
+    bins_size,
+    max_distance,
+    max_distance_in_cells,
+    function,
+    reference_bin,
+    exact_max_distance,
+    global_mapped_distance_matrix,
+):
+    r"""
+    Function to be executed on the worker, provides a mapping for each
+    subproblem which computes the mapped distance.
+
+    Returns
+    -------
+    `tuple`
+    """
+
+    # location of the lower left point of the non-padded bin in terms
+    # of uniform grid cells
+    bin_virtual_lower_left = bin_coords * bins_size
+    # location of the upper right point of the non-padded bin
+    bin_virtual_upper_right = bin_virtual_lower_left + bins_size - 1
+
+    # translate the subgroup in order to locate it nearby the reference bin
+    # (reminder: the lower left point of the (non-padded) reference bin is
+    # [0,0]).
+    subgroup_content -= bin_virtual_lower_left * uniform_grid_cell_step
+
+    x_grid, y_grid, cmponents = reference_bin.shape
+    x_strides, y_strides, cmponents_strides = reference_bin.strides
+    _reference_bin = np.lib.stride_tricks.as_strided(
+        reference_bin,
+        shape=(x_grid, y_grid, 1, cmponents),
+        strides=(x_strides, y_strides, 0, cmponents_strides),
+    )
+    _subgroup = np.lib.stride_tricks.as_strided(
+        subgroup_content,
+        shape=(1, 1, *subgroup_content.shape),
+        strides=(0, 0, *subgroup_content.strides),
+    )
+
+    distances = np.sqrt(
+        np.sum(np.power(_reference_bin - _subgroup, 2), axis=3)
+    )
+
+    mapped_distance = np.zeros_like(distances[:, :, 0])
+    L, M, N = distances.shape
+
+    for i in range(L):
+        for j in range(M):
+            for k in range(N):
+                if distances[i, j, k] < max_distance:
                     mapped_distance[i, j] += (
                         function(distances[i, j, k]) * weights[k]
                     )
