@@ -8,7 +8,11 @@ from numpy_dimensional_utils import (
     periodic_inner_sum,
 )
 
-from parallel_mapped_distance import group_by, extract_subproblems
+from parallel_mapped_distance import (
+    group_by,
+    extract_subproblems,
+    generate_uniform_grid,
+)
 
 add_to_slice = nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)(
     add_to_slice
@@ -21,7 +25,6 @@ def start_subproblem(
     bins_coords,
     weights,
     uniform_grid_cell_step,
-    uniform_grid_size,
     bins_size,
     max_distance,
     max_distance_in_cells,
@@ -36,7 +39,6 @@ def start_subproblem(
         nup_idxes=bin_content,
         weights=weights[bin_content],
         uniform_grid_cell_step=uniform_grid_cell_step,
-        uniform_grid_size=uniform_grid_size,
         bins_size=bins_size,
         max_distance=max_distance,
         max_distance_in_cells=max_distance_in_cells,
@@ -116,7 +118,6 @@ def distribute_and_start_subproblems(
             pts_bin_coords,
             weights,
             uniform_grid_cell_step,
-            uniform_grid_size,
             bins_size,
             max_distance,
             max_distance_in_cells,
@@ -137,7 +138,6 @@ def compute_mapped_distance_on_subgroup(
     nup_idxes,
     weights,
     uniform_grid_cell_step,
-    uniform_grid_size,
     bins_size,
     max_distance,
     max_distance_in_cells,
@@ -208,25 +208,6 @@ def compute_mapped_distance_on_subgroup(
         bin_virtual_lower_left,
         bin_virtual_upper_right + 1 + 2 * max_distance_in_cells,
     )
-
-
-def generate_uniform_grid(grid_step, grid_size):
-    r"""
-    Generate an uniform grid according to the given features in `D` dimensions.
-
-    Returns
-    -------
-    `np.ndarray`
-    """
-    # the tranpose is needed because we want the components in the rightmost
-    # part of the shape
-    integer_grid = extract_slice(
-        np.mgrid, np.zeros_like(grid_size), grid_size
-    ).T
-    # TODO 3d
-    grid = integer_grid * grid_step[None, None]
-
-    return np.swapaxes(grid, 0, 1)
 
 
 def mapped_distance_matrix(
