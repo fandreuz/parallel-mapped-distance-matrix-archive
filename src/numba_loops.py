@@ -303,7 +303,7 @@ def mapped_distance_matrix(
     executor,
     weights=None,
     exact_max_distance=True,
-    pts_per_future=5,
+    pts_per_future=-1,
     cell_reference_point_offset=0,
 ):
     r"""
