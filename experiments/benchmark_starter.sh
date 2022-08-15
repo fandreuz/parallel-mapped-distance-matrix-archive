@@ -1,11 +1,9 @@
-for file in $(ls pycsou*.py); do
-echo "$file : $(python3 $file $1 $2)" >> "output${1}_${2}.txt";
-done
-
-for file in $(ls pmb*.py); do
-echo "$file : $(python3 $file $1 $2)" >> "output${1}_${2}.txt";
-done
-
-for file in $(ls pf*.py); do
-echo "$file : $(python3 $file $1 $2)" >> "output${1}_${2}.txt";
+for problem_dim in {1..5}; do
+    for file in $(ls runners/); do
+        if [ "${file: -3}" == ".py" ]
+        then
+            python3 runner.py runners.${file%???} 20 data.random_points 0.1 $(($problem_dim * 4))
+        fi
+    done
+    echo "Batch $problem_dim finished."
 done

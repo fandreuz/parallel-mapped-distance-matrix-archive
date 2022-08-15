@@ -32,9 +32,13 @@ iterations = int(sys.argv[N_ITERATIONS])
 times = np.empty(iterations, dtype=np.single)
 for i in range(iterations):
     start = time()
-    runner.run(
-        samples1, samples2, func, max_distance, uniform_params, bins_size
-    )
+    try:
+        runner.run(
+            samples1, samples2, func, max_distance, uniform_params, bins_size
+        )
+    except:
+        print('Error: ' + str(sys.argv) + ", ignoring...")
+        continue
     times[i] = time() - start
 
 mean = np.mean(times)
