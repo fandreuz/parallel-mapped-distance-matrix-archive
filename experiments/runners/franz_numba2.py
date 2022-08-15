@@ -3,12 +3,11 @@ import pathlib
 
 sys.path.append(str(pathlib.Path().resolve().parent) + "/src")
 
-from dask_client import mapped_distance_matrix
+from numba_loops import mapped_distance_matrix
 
-from dask.distributed import Client
+from concurrent.futures import ThreadPoolExecutor
 
-client = Client(processes=False)
-client.restart()
+executor = ThreadPoolExecutor(2)
 
 
 def run(samples1, samples2, func, max_distance, uniform_params, bins_size):
@@ -19,7 +18,6 @@ def run(samples1, samples2, func, max_distance, uniform_params, bins_size):
         non_uniform_points=samples2,
         max_distance=max_distance,
         func=func,
-        client=client,
-        pts_per_future=-1,
+        executor=executor,
         exact_max_distance=True,
     )
