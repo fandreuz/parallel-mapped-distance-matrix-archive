@@ -40,8 +40,9 @@ def run():
                 uniform_params,
                 bins_size,
             )
-        except:
+        except Exception as error:
             print("Error: " + str(sys.argv) + ", ignoring...")
+            print(error)
             ok[i] = False
             continue
         times[i] = time() - start
