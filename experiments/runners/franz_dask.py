@@ -8,6 +8,7 @@ from dask_client import mapped_distance_matrix
 from dask.distributed import Client
 
 client = Client(processes=False)
+client.restart()
 
 
 def run(samples1, samples2, func, max_distance, uniform_params, bins_size):
