@@ -9,4 +9,4 @@ def run(samples1, samples2, func, max_distance, uniform_params, bins_size):
         operator_type="sparse",
         max_distance=max_distance,
         dtype=samples2.dtype,
-    ).mat.compute()
+    ).mat
