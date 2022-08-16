@@ -19,6 +19,7 @@ add_to_slice = nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)(
 )
 
 
+@nb.jit(nopython=True, fastmath=True, cache=True, nogil=True)
 def start_subproblem(
     bin_content,
     pts,
@@ -131,7 +132,7 @@ def distribute_and_start_subproblems(
     )
 
 
-@nb.generated_jit(nopython=True)
+@nb.generated_jit(nopython=True, nogil=True)
 def compute_mapped_distance_on_subgroup(
     subgroup_content,
     bin_coords,
